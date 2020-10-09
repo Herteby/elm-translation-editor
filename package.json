@@ -1,5 +1,9 @@
 {
+  "scripts": {
+    "build": "parcel build src/Index.html -d docs"
+  },
   "devDependencies": {
+    "cssnano": "^4.1.10",
     "elm-hot": "^1.1.5",
     "node-elm-compiler": "^5.0.5"
   }

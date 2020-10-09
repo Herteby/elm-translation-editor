@@ -414,5 +414,5 @@ toDeclaration t =
                     |> CodeGen.record
                 )
 
-        _ ->
-            Debug.todo "TODO"
+        ChoiceTemplate name _ ->
+            CodeGen.valDecl Nothing Nothing name (CodeGen.string "TODO")
