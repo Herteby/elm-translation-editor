@@ -1,39 +1,83 @@
 body{
     font-family: sans-serif;
     background: #eeeeee;
+    margin: 0px;
 }
-
-main{
+header {
+    background: #0e94d7;
+    color:white;
+    padding: 20px;
+    font-size: 20px;
+}
+main {
     display: flex;
     flex-direction: column;
 }
 main > * {
-    margin:10px;
+    margin-top:10px;
+}
+button{
+    background: #0e94d7;
+    color:white;
+    font-size: 20px;
+    border: none;
+    border-radius: 5px;
+    padding: 10px;
+    line-height: 1em;
+    cursor: pointer;
 }
 textarea {
     height:300px;
-    border:1px solid #aaa;
+    border:none;
     padding:10px;
+    border-radius: 5px;
+    box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
+}
+label{
+    display:flex;
+    margin-top:10px;
+    border-radius: 5px;
+    overflow: hidden;
+}
+label span {
+    display: flex;
+    align-items: center;
+    background: #0e94d7;
+    color: white;
+    padding: 0 10px;
+}
+input{
+    padding:10px;
+    flex-grow:1;
+    border:none;
+    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.2);
+}
+pre{
+    padding:20px;
+    background: white;
+    border-radius: 5px;
+    box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
+}
+.container{
+    max-width: 800px;
+    margin:0 auto;
+}
+.upload {
+    display:flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.addExample{
+    color:#0e94d7;
+    font-weight: bold;
+    cursor: pointer;
 }
 .translation {
     display: flex;
     flex-direction: column;
-    border:1px solid #aaa;
     padding: 10px;
-}
-label{
-    display:flex;
-    align-items: center;
-    margin:10px 0px;
-}
-input{
-    margin-left:10px;
-    padding:10px;
-    flex-grow:1;
-    border:1px solid #aaa;
-}
-pre{
-    padding:20px;
-    border:1px solid #aaa;
+    border-radius: 5px;
     background: white;
+    box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
+    margin-bottom: 10px;
 }
