@@ -13,9 +13,11 @@ import Elm.Syntax.Pattern exposing (Pattern(..))
 import File exposing (File)
 import File.Select
 import Html exposing (..)
-import Html.Attributes exposing (class, style, value)
+import Html.Attributes exposing (class, classList, placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
+import List.Extra as List
 import Maybe.Extra as Maybe
+import Regex exposing (Regex)
 import Result.Extra as Result
 import Task
 
@@ -29,8 +31,14 @@ welcome =
    , en = "Welcome"
    , sv = "Välkommen"
    }
-
-
+   
+welcome =
+   { dk = "Velkommen"
+   , en = "Welcome"
+   , sv = "Välkommen"
+   }
+   
+{-| -}
 apples =
    { dk = { singular = "æble", plural = "æbler" }
    , en = { singular = "apple", plural = "apples" }
@@ -44,7 +52,7 @@ hi name =
    , sv = [ "Hej ", name, "!" ]
    }
 
-
+{-| -}
 thereAreNCases n =
    { sv = { singular = [ "Det finns ", n, " ärende" ], plural = [ "Det finns ", n, " ärenden" ] }
    , dk = { singular = [ "", n, "" ], plural = [ "", n, "" ] }
@@ -72,7 +80,7 @@ type Msg
     | GotFile File
     | AddExampleCode
     | StartEdit (List Definition)
-    | SetTranslation Int String String
+    | SetTranslation Int (Maybe ChoiceKey) Language String
 
 
 main =
@@ -115,7 +123,7 @@ update msg model =
         StartEdit translations ->
             ( { model | page = Edit translations }, Cmd.none )
 
-        SetTranslation index key val ->
+        SetTranslation index choiceKey language string ->
             case model.page of
                 Edit translations ->
                     ( { model
@@ -124,10 +132,46 @@ update msg model =
                                 List.indexedMap
                                     (\i def ->
                                         if i == index then
-                                            case def.translation of
-                                                Basic pairs ->
+                                            case ( def.translation, choiceKey ) of
+                                                ( Basic languages, Nothing ) ->
                                                     { def
-                                                        | translation = Basic (Dict.insert key val pairs)
+                                                        | translation = Basic (Dict.insert language string languages)
+                                                        , checked = True
+                                                    }
+
+                                                ( Choice languages, Just key ) ->
+                                                    { def
+                                                        | translation = Choice (Dict.update language (Maybe.map (Dict.insert key string)) languages)
+                                                        , checked = True
+                                                    }
+
+                                                ( Template args languages, Nothing ) ->
+                                                    { def
+                                                        | translation =
+                                                            Template args
+                                                                (Dict.insert language
+                                                                    { string = string
+                                                                    , expressions = templateToExpressions args string
+                                                                    }
+                                                                    languages
+                                                                )
+                                                        , checked = True
+                                                    }
+
+                                                ( TemplateChoice args languages, Just key ) ->
+                                                    { def
+                                                        | translation =
+                                                            TemplateChoice args
+                                                                (Dict.update language
+                                                                    (Maybe.map
+                                                                        (Dict.insert key
+                                                                            { string = string
+                                                                            , expressions = templateToExpressions args string
+                                                                            }
+                                                                        )
+                                                                    )
+                                                                    languages
+                                                                )
                                                         , checked = True
                                                     }
 
@@ -153,12 +197,11 @@ view model =
         , main_ [ class "container" ] <|
             case model.page of
                 Start ->
-                    [ div [ class "upload" ]
+                    [ div [ class "toolbar" ]
                         [ button [ onClick SelectFile ] [ text "Upload a translation file" ]
-                        , span [] [ text "or paste the contents below" ]
-                        , span [ class "addExample", onClick AddExampleCode ] [ text "...or click here to add example code" ]
+                        , span [ class "addExample", onClick AddExampleCode ] [ text "click here to insert example code" ]
                         ]
-                    , textarea [ value model.code, onInput SetCode ] []
+                    , textarea [ value model.code, placeholder "...or paste the contents here", onInput SetCode ] []
                     , case translationsFromCode model.code of
                         Ok translations ->
                             button [ onClick (StartEdit translations) ] [ text "Edit translations" ]
@@ -180,27 +223,43 @@ editor translations =
     div [] <|
         List.indexedMap
             (\i { name, translation, checked } ->
-                case translation of
-                    Basic pairs ->
-                        div [ class "translation" ] <|
-                            div []
-                                [ if checked then
-                                    span [ style "color" "green" ] [ text "✔" ]
+                div [ classList [ ( "card", True ), ( "todo", not checked ) ] ] <|
+                    div []
+                        [ text name ]
+                        :: (case translation of
+                                Basic languages ->
+                                    List.map
+                                        (\( language, string ) ->
+                                            textInput language string False (SetTranslation i Nothing)
+                                        )
+                                        (Dict.toList languages)
 
-                                  else
-                                    span [ style "color" "red" ] [ text "⚠" ]
-                                , text name
-                                ]
-                                :: List.map
-                                    (\( key, val ) ->
-                                        label [] [ span [] [ text key ], input [ value val, onInput (SetTranslation i key) ] [] ]
-                                    )
-                                    (Dict.toList pairs)
+                                Choice languages ->
+                                    [ div [ class "columns" ] [] ]
 
-                    _ ->
-                        div [] [ text "TODO" ]
+                                Template placeholders languages ->
+                                    List.map
+                                        (\( language, { string, expressions } ) ->
+                                            textInput language string (expressions == Nothing) (SetTranslation i Nothing)
+                                        )
+                                        (Dict.toList languages)
+
+                                TemplateChoice placeholders languages ->
+                                    [ div [ class "columns" ] [] ]
+                           )
             )
             translations
+
+
+textInput : String -> String -> Bool -> (String -> String -> msg) -> Html msg
+textInput language string invalid msg =
+    label [ classList [ ( "invalid", invalid ) ] ]
+        [ span [] [ text language ]
+        , div [ class "autoexpand" ]
+            [ textarea [ onInput (msg language), value string ] []
+            , div [] [ text (string ++ "_") ]
+            ]
+        ]
 
 
 type alias Definition =
@@ -213,8 +272,14 @@ type alias Definition =
 type Translation
     = Basic (Dict Language String)
     | Choice (Dict Language (Dict ChoiceKey String))
-    | Template (List Argument) (Dict Language (List TemplateItem))
-    | TemplateChoice (List Argument) (Dict Language (Dict ChoiceKey (List TemplateItem)))
+    | Template (List Argument) (Dict Language TemplateBody)
+    | TemplateChoice (List Argument) (Dict Language (Dict ChoiceKey TemplateBody))
+
+
+type alias TemplateBody =
+    { string : String
+    , expressions : Maybe (List CodeGen.Expression)
+    }
 
 
 type alias Argument =
@@ -227,11 +292,6 @@ type alias Language =
 
 type alias ChoiceKey =
     String
-
-
-type TemplateItem
-    = Text String
-    | Placeholder String
 
 
 translationsFromCode : String -> Result String (List Definition)
@@ -324,20 +384,7 @@ getTemplateChoice { arguments, expression } =
                                         (\(Node _ ( Node _ choiceKey, Node _ expression3 )) ->
                                             case expression3 of
                                                 ListExpr nodes ->
-                                                    nodes
-                                                        |> List.map
-                                                            (\(Node _ item) ->
-                                                                case item of
-                                                                    Literal str ->
-                                                                        Just <| Text str
-
-                                                                    FunctionOrValue [] str ->
-                                                                        Just <| Placeholder str
-
-                                                                    _ ->
-                                                                        Nothing
-                                                            )
-                                                        |> Maybe.combine
+                                                    getTemplateBody nodes
                                                         |> Maybe.map (\list -> ( choiceKey, list ))
 
                                                 _ ->
@@ -372,6 +419,58 @@ getTemplateChoice { arguments, expression } =
 
         _ ->
             Nothing
+
+
+getTemplateBody : List (Node Expression) -> Maybe TemplateBody
+getTemplateBody =
+    List.map
+        (\(Node _ item) ->
+            case item of
+                Literal str ->
+                    Just ( str, CodeGen.string str )
+
+                FunctionOrValue [] str ->
+                    Just ( "{" ++ str ++ "}", CodeGen.val str )
+
+                _ ->
+                    Nothing
+        )
+        >> Maybe.combine
+        >> Maybe.map
+            (\list ->
+                { string = list |> List.map Tuple.first |> String.join ""
+                , expressions = Just <| List.map Tuple.second list
+                }
+            )
+
+
+templateToExpressions : List String -> String -> Maybe (List CodeGen.Expression)
+templateToExpressions args templateBody =
+    let
+        matches =
+            Regex.find rgx templateBody
+                |> List.map
+                    (.match
+                        >> String.dropLeft 1
+                        >> String.dropRight 1
+                    )
+
+        vals =
+            List.map CodeGen.val matches
+
+        strings =
+            Regex.split rgx templateBody |> List.map CodeGen.string
+    in
+    if List.all (\p -> List.member p args) matches then
+        Just <| List.interweave strings vals
+
+    else
+        Nothing
+
+
+rgx : Regex
+rgx =
+    Regex.fromString "{.*?}" |> Maybe.withDefault Regex.never
 
 
 getChoice : FunctionImplementation -> Maybe Translation
@@ -421,20 +520,7 @@ getTemplate { arguments, expression, name } =
                     (\(Node _ ( Node _ language, Node _ expression2 )) ->
                         case expression2 of
                             ListExpr nodes ->
-                                nodes
-                                    |> List.map
-                                        (\(Node _ item) ->
-                                            case item of
-                                                Literal str ->
-                                                    Just <| Text str
-
-                                                FunctionOrValue [] str ->
-                                                    Just <| Placeholder str
-
-                                                _ ->
-                                                    Nothing
-                                        )
-                                    |> Maybe.combine
+                                getTemplateBody nodes
                                     |> Maybe.map (\list -> ( language, list ))
 
                             _ ->
@@ -512,19 +598,9 @@ toDeclaration { name, translation, checked } =
                     (languages
                         |> Dict.toList
                         |> List.map
-                            (\( language, list ) ->
+                            (\( language, { expressions } ) ->
                                 ( language
-                                , list
-                                    |> List.map
-                                        (\item ->
-                                            case item of
-                                                Text str ->
-                                                    CodeGen.string str
-
-                                                Placeholder str ->
-                                                    CodeGen.val str
-                                        )
-                                    |> CodeGen.list
+                                , CodeGen.list <| Maybe.withDefault [] expressions
                                 )
                             )
                     )
@@ -562,19 +638,9 @@ toDeclaration { name, translation, checked } =
                                 , choices
                                     |> Dict.toList
                                     |> List.map
-                                        (\( choiceKey, list ) ->
+                                        (\( choiceKey, { expressions } ) ->
                                             ( choiceKey
-                                            , list
-                                                |> List.map
-                                                    (\item ->
-                                                        case item of
-                                                            Text str ->
-                                                                CodeGen.string str
-
-                                                            Placeholder str ->
-                                                                CodeGen.val str
-                                                    )
-                                                |> CodeGen.list
+                                            , CodeGen.list <| Maybe.withDefault [] expressions
                                             )
                                         )
                                     |> CodeGen.record

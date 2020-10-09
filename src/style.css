@@ -7,7 +7,7 @@ header {
     background: #0e94d7;
     color:white;
     padding: 20px;
-    font-size: 20px;
+    font-size: 25px;
 }
 main {
     display: flex;
@@ -46,11 +46,11 @@ label span {
     color: white;
     padding: 0 10px;
 }
-input{
-    padding:10px;
-    flex-grow:1;
-    border:none;
-    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.2);
+label.invalid span {
+    background: #600;
+}
+label.invalid input {
+    background: #faa;
 }
 pre{
     padding:20px;
@@ -62,7 +62,7 @@ pre{
     max-width: 800px;
     margin:0 auto;
 }
-.upload {
+.toolbar {
     display:flex;
     align-items: center;
     justify-content: space-between;
@@ -72,12 +72,45 @@ pre{
     font-weight: bold;
     cursor: pointer;
 }
-.translation {
+.card {
     display: flex;
     flex-direction: column;
     padding: 10px;
     border-radius: 5px;
+    color:#aaaaaa;
     background: white;
     box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
     margin-bottom: 10px;
+}
+.card.todo {
+    background: #feb;
+}
+.autoexpand {
+    position: relative;
+    flex-grow: 1;
+}
+.autoexpand textarea {
+    position:absolute;
+    top:0px;
+    bottom:0px;
+    left:0px;
+    right:0px;
+    width: 100%;
+    height:100%;
+    resize:none;
+    border-radius: 0px;
+    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.2);
+}
+.autoexpand textarea, .autoexpand div {
+    padding: 10px;
+    font-size: 16px;
+    font-family:sans-serif;
+    border:none;
+    line-height: 1.3em;
+    white-space:pre-wrap;
+    box-sizing:border-box;
+    margin:0px;
+}
+.autoexpand div {
+    word-break: break-all;
 }
