@@ -19,25 +19,36 @@ import Maybe.Extra as Maybe
 code =
     """module Translations exposing (..)
        
+{-| OK
+-}
 welcome =
-    { sv = "Välkommen"
-    , dk = "Velkommen"
-    , en = "Welcome"
-    }
+   { sv = "Välkommen"
+   , dk = "Velkommen"
+   , en = "Welcome"
+   }
 
 
 cases =
-    { sv = { singular = "ärende", plural = "ärenden" }
-    , dk = { singular = "ærinde", plural = "ærinder" }
-    , en = { singular = "case", plural = "cases" }
-    }
+   { sv = { singular = "ärende", plural = "ärenden" }
+   , dk = { singular = "ærinde", plural = "ærinder" }
+   , en = { singular = "case", plural = "cases" }
+   }
 
-
+{-| OK
+-}
 hello name =
-    { sv = [ "Hej ", name, "!" ]
-    , dk = [ "Hej ", name, "!" ]
-    , en = [ "Hi ", name, "!" ]
-    }
+   { sv = [ "Hej ", name, "!" ]
+   , dk = [ "Hej ", name, "!" ]
+   , en = [ "Hi ", name, "!" ]
+   }
+
+
+thereAreNCases n =
+   { sv = { singular = [ "Det finns ", n, " ärende" ], plural = [ "Det finns ", n, " ärenden" ] }
+   , dk = { singular = [ "", n, "" ], plural = [ "", n, "" ] }
+   , en = { singular = [ "There is ", n, " case" ], plural = [ "There are ", n, " cases" ] }
+   }
+
 """
 
 
@@ -53,7 +64,7 @@ type Msg
 
 
 
-{- main =
+{- main2 =
    code
        |> Elm.Parser.parse
        >> Result.mapError (always "Syntax Error")
@@ -148,10 +159,26 @@ editor translations =
 
 
 type Translation
-    = Basic String (Dict String String)
-    | Choice String (Dict String (Dict String String))
-    | Template String (List String) (Dict String (List TemplateItem))
-    | ChoiceTemplate String (Dict String ( List String, List String ))
+    = Basic Name (Dict Language String)
+    | Choice Name (Dict Language (Dict ChoiceKey String))
+    | Template Name (List Argument) (Dict Language (List TemplateItem))
+    | TemplateChoice Name (List Argument) (Dict Language (Dict ChoiceKey (List TemplateItem)))
+
+
+type alias Name =
+    String
+
+
+type alias Argument =
+    String
+
+
+type alias Language =
+    String
+
+
+type alias ChoiceKey =
+    String
 
 
 type TemplateItem
@@ -180,6 +207,7 @@ fromAst =
                 [ getBasic
                 , getTemplate
                 , getChoice
+                , getTemplateChoice
                 ]
             )
 
@@ -187,21 +215,21 @@ fromAst =
 getBasic : FunctionImplementation -> Maybe Translation
 getBasic { arguments, expression, name } =
     case ( arguments, expression, name ) of
-        ( [], Node _ (RecordExpr pairs), Node _ name2 ) ->
-            pairs
+        ( [], Node _ (RecordExpr languages), Node _ name2 ) ->
+            languages
                 |> List.map
-                    (\(Node _ ( Node _ key, Node _ expression2 )) ->
+                    (\(Node _ ( Node _ language, Node _ expression2 )) ->
                         case expression2 of
                             Literal string ->
-                                Just ( key, string )
+                                Just ( language, string )
 
                             _ ->
                                 Nothing
                     )
                 |> Maybe.combine
                 |> Maybe.map
-                    (\pairs2 ->
-                        Basic name2 (Dict.fromList pairs2)
+                    (\pairs ->
+                        Basic name2 (Dict.fromList pairs)
                     )
 
         _ ->
@@ -210,43 +238,107 @@ getBasic { arguments, expression, name } =
 
 ast =
     RecordExpr
-        [ Node { end = { column = 50, row = 4 }, start = { column = 6, row = 4 } }
-            ( Node { end = { column = 8, row = 4 }, start = { column = 6, row = 4 } } "sv"
-            , Node { end = { column = 50, row = 4 }, start = { column = 11, row = 4 } }
+        [ Node { end = { column = 99, row = 4 }, start = { column = 7, row = 4 } }
+            ( Node { end = { column = 9, row = 4 }, start = { column = 7, row = 4 } } "sv"
+            , Node { end = { column = 99, row = 4 }, start = { column = 12, row = 4 } }
                 (RecordExpr
-                    [ Node { end = { column = 30, row = 4 }, start = { column = 12, row = 4 } } ( Node { end = { column = 20, row = 4 }, start = { column = 12, row = 4 } } "singular", Node { end = { column = 30, row = 4 }, start = { column = 22, row = 4 } } (Literal "ärende") )
-                    , Node { end = { column = 49, row = 4 }, start = { column = 31, row = 4 } } ( Node { end = { column = 37, row = 4 }, start = { column = 31, row = 4 } } "plural", Node { end = { column = 48, row = 4 }, start = { column = 39, row = 4 } } (Literal "ärenden") )
+                    [ Node { end = { column = 55, row = 4 }, start = { column = 14, row = 4 } } ( Node { end = { column = 22, row = 4 }, start = { column = 14, row = 4 } } "singular", Node { end = { column = 55, row = 4 }, start = { column = 25, row = 4 } } (ListExpr [ Node { end = { column = 39, row = 4 }, start = { column = 27, row = 4 } } (Literal "Det finns "), Node { end = { column = 42, row = 4 }, start = { column = 41, row = 4 } } (FunctionOrValue [] "n"), Node { end = { column = 53, row = 4 }, start = { column = 44, row = 4 } } (Literal " ärende") ]) )
+                    , Node { end = { column = 98, row = 4 }, start = { column = 57, row = 4 } } ( Node { end = { column = 63, row = 4 }, start = { column = 57, row = 4 } } "plural", Node { end = { column = 97, row = 4 }, start = { column = 66, row = 4 } } (ListExpr [ Node { end = { column = 80, row = 4 }, start = { column = 68, row = 4 } } (Literal "Det finns "), Node { end = { column = 83, row = 4 }, start = { column = 82, row = 4 } } (FunctionOrValue [] "n"), Node { end = { column = 95, row = 4 }, start = { column = 85, row = 4 } } (Literal " ärenden") ]) )
                     ]
                 )
             )
-        , Node { end = { column = 4, row = 6 }, start = { column = 6, row = 5 } } ( Node { end = { column = 8, row = 5 }, start = { column = 6, row = 5 } } "dk", Node { end = { column = 50, row = 5 }, start = { column = 11, row = 5 } } (RecordExpr [ Node { end = { column = 30, row = 5 }, start = { column = 12, row = 5 } } ( Node { end = { column = 20, row = 5 }, start = { column = 12, row = 5 } } "singular", Node { end = { column = 30, row = 5 }, start = { column = 22, row = 5 } } (Literal "ærinde") ), Node { end = { column = 49, row = 5 }, start = { column = 31, row = 5 } } ( Node { end = { column = 37, row = 5 }, start = { column = 31, row = 5 } } "plural", Node { end = { column = 48, row = 5 }, start = { column = 39, row = 5 } } (Literal "ærinder") ) ]) )
-        , Node { end = { column = 4, row = 7 }, start = { column = 6, row = 6 } } ( Node { end = { column = 8, row = 6 }, start = { column = 6, row = 6 } } "en", Node { end = { column = 46, row = 6 }, start = { column = 11, row = 6 } } (RecordExpr [ Node { end = { column = 28, row = 6 }, start = { column = 12, row = 6 } } ( Node { end = { column = 20, row = 6 }, start = { column = 12, row = 6 } } "singular", Node { end = { column = 28, row = 6 }, start = { column = 22, row = 6 } } (Literal "case") ), Node { end = { column = 45, row = 6 }, start = { column = 30, row = 6 } } ( Node { end = { column = 36, row = 6 }, start = { column = 30, row = 6 } } "plural", Node { end = { column = 44, row = 6 }, start = { column = 37, row = 6 } } (Literal "cases") ) ]) )
+        , Node { end = { column = 5, row = 6 }, start = { column = 7, row = 5 } } ( Node { end = { column = 9, row = 5 }, start = { column = 7, row = 5 } } "dk", Node { end = { column = 64, row = 5 }, start = { column = 12, row = 5 } } (RecordExpr [ Node { end = { column = 38, row = 5 }, start = { column = 14, row = 5 } } ( Node { end = { column = 22, row = 5 }, start = { column = 14, row = 5 } } "singular", Node { end = { column = 38, row = 5 }, start = { column = 25, row = 5 } } (ListExpr [ Node { end = { column = 29, row = 5 }, start = { column = 27, row = 5 } } (Literal ""), Node { end = { column = 32, row = 5 }, start = { column = 31, row = 5 } } (FunctionOrValue [] "n"), Node { end = { column = 36, row = 5 }, start = { column = 34, row = 5 } } (Literal "") ]) ), Node { end = { column = 63, row = 5 }, start = { column = 40, row = 5 } } ( Node { end = { column = 46, row = 5 }, start = { column = 40, row = 5 } } "plural", Node { end = { column = 62, row = 5 }, start = { column = 49, row = 5 } } (ListExpr [ Node { end = { column = 53, row = 5 }, start = { column = 51, row = 5 } } (Literal ""), Node { end = { column = 56, row = 5 }, start = { column = 55, row = 5 } } (FunctionOrValue [] "n"), Node { end = { column = 60, row = 5 }, start = { column = 58, row = 5 } } (Literal "") ]) ) ]) )
+        , Node { end = { column = 5, row = 7 }, start = { column = 7, row = 6 } } ( Node { end = { column = 9, row = 6 }, start = { column = 7, row = 6 } } "en", Node { end = { column = 94, row = 6 }, start = { column = 12, row = 6 } } (RecordExpr [ Node { end = { column = 52, row = 6 }, start = { column = 14, row = 6 } } ( Node { end = { column = 22, row = 6 }, start = { column = 14, row = 6 } } "singular", Node { end = { column = 52, row = 6 }, start = { column = 25, row = 6 } } (ListExpr [ Node { end = { column = 38, row = 6 }, start = { column = 27, row = 6 } } (Literal "There is "), Node { end = { column = 41, row = 6 }, start = { column = 40, row = 6 } } (FunctionOrValue [] "n"), Node { end = { column = 50, row = 6 }, start = { column = 43, row = 6 } } (Literal " case") ]) ), Node { end = { column = 93, row = 6 }, start = { column = 54, row = 6 } } ( Node { end = { column = 60, row = 6 }, start = { column = 54, row = 6 } } "plural", Node { end = { column = 92, row = 6 }, start = { column = 63, row = 6 } } (ListExpr [ Node { end = { column = 77, row = 6 }, start = { column = 65, row = 6 } } (Literal "There are "), Node { end = { column = 80, row = 6 }, start = { column = 79, row = 6 } } (FunctionOrValue [] "n"), Node { end = { column = 90, row = 6 }, start = { column = 82, row = 6 } } (Literal " cases") ]) ) ]) )
         ]
 
 
-getChoice : FunctionImplementation -> Maybe Translation
-getChoice { arguments, expression, name } =
+getTemplateChoice : FunctionImplementation -> Maybe Translation
+getTemplateChoice { arguments, expression, name } =
     case ( arguments, expression, name ) of
-        ( [], Node _ (RecordExpr pairs), Node _ name2 ) ->
-            pairs
+        ( _ :: [], Node _ (RecordExpr languages), Node _ name2 ) ->
+            languages
                 |> List.map
-                    (\(Node _ ( Node _ key, Node _ expression2 )) ->
+                    (\(Node _ ( Node _ language, Node _ expression2 )) ->
                         case expression2 of
-                            RecordExpr pairs2 ->
-                                pairs2
+                            RecordExpr choices ->
+                                choices
                                     |> List.map
-                                        (\(Node _ ( Node _ key2, Node _ expression3 )) ->
+                                        (\(Node _ ( Node _ choiceKey, Node _ expression3 )) ->
                                             case expression3 of
-                                                Literal string ->
-                                                    Just ( key2, string )
+                                                ListExpr nodes ->
+                                                    nodes
+                                                        |> List.map
+                                                            (\(Node _ item) ->
+                                                                case item of
+                                                                    Literal str ->
+                                                                        Just <| Text str
+
+                                                                    FunctionOrValue [] str ->
+                                                                        Just <| Placeholder str
+
+                                                                    _ ->
+                                                                        Nothing
+                                                            )
+                                                        |> Maybe.combine
+                                                        |> Maybe.map (\list -> ( choiceKey, list ))
 
                                                 _ ->
                                                     Nothing
                                         )
                                     |> Maybe.combine
                                     |> Maybe.map
-                                        (\pairs3 ->
-                                            ( key, Dict.fromList pairs3 )
+                                        (\pairs ->
+                                            ( language, Dict.fromList pairs )
+                                        )
+
+                            _ ->
+                                Nothing
+                    )
+                |> Maybe.combine
+                |> Maybe.map2
+                    (\args pairs ->
+                        TemplateChoice name2 args (Dict.fromList pairs)
+                    )
+                    (List.map
+                        (\a ->
+                            case a of
+                                Node _ (VarPattern str) ->
+                                    Just str
+
+                                _ ->
+                                    Nothing
+                        )
+                        arguments
+                        |> Maybe.combine
+                    )
+
+        _ ->
+            Nothing
+
+
+getChoice : FunctionImplementation -> Maybe Translation
+getChoice { arguments, expression, name } =
+    case ( arguments, expression, name ) of
+        ( [], Node _ (RecordExpr languages), Node _ name2 ) ->
+            languages
+                |> List.map
+                    (\(Node _ ( Node _ language, Node _ expression2 )) ->
+                        case expression2 of
+                            RecordExpr choices ->
+                                choices
+                                    |> List.map
+                                        (\(Node _ ( Node _ choiceKey, Node _ expression3 )) ->
+                                            case expression3 of
+                                                Literal string ->
+                                                    Just ( choiceKey, string )
+
+                                                _ ->
+                                                    Nothing
+                                        )
+                                    |> Maybe.combine
+                                    |> Maybe.map
+                                        (\pairs ->
+                                            ( language, Dict.fromList pairs )
                                         )
 
                             _ ->
@@ -254,8 +346,8 @@ getChoice { arguments, expression, name } =
                     )
                 |> Maybe.combine
                 |> Maybe.map
-                    (\pairs2 ->
-                        Choice name2 (Dict.fromList pairs2)
+                    (\pairs ->
+                        Choice name2 (Dict.fromList pairs)
                     )
 
         _ ->
@@ -265,10 +357,10 @@ getChoice { arguments, expression, name } =
 getTemplate : FunctionImplementation -> Maybe Translation
 getTemplate { arguments, expression, name } =
     case ( arguments, expression, name ) of
-        ( _ :: [], Node _ (RecordExpr pairs), Node _ name2 ) ->
-            pairs
+        ( _ :: [], Node _ (RecordExpr languages), Node _ name2 ) ->
+            languages
                 |> List.map
-                    (\(Node _ ( Node _ key, Node _ expression2 )) ->
+                    (\(Node _ ( Node _ language, Node _ expression2 )) ->
                         case expression2 of
                             ListExpr nodes ->
                                 nodes
@@ -285,15 +377,15 @@ getTemplate { arguments, expression, name } =
                                                     Nothing
                                         )
                                     |> Maybe.combine
-                                    |> Maybe.map (\list -> ( key, list ))
+                                    |> Maybe.map (\list -> ( language, list ))
 
                             _ ->
                                 Nothing
                     )
                 |> Maybe.combine
                 |> Maybe.map2
-                    (\args pairs2 ->
-                        Template name2 args (Dict.fromList pairs2)
+                    (\args pairs ->
+                        Template name2 args (Dict.fromList pairs)
                     )
                     (List.map
                         (\a ->
@@ -340,7 +432,7 @@ print translations =
                             Template name _ _ ->
                                 name
 
-                            ChoiceTemplate name _ ->
+                            TemplateChoice name _ _ ->
                                 name
                 )
                 translations
@@ -355,31 +447,31 @@ print translations =
 toDeclaration : Translation -> CodeGen.Declaration
 toDeclaration t =
     case t of
-        Basic name pairs ->
+        Basic name languages ->
             CodeGen.valDecl Nothing
                 Nothing
                 name
                 (CodeGen.record
-                    (pairs
+                    (languages
                         |> Dict.toList
                         |> List.map
-                            (\( key, val ) ->
-                                ( key, CodeGen.string val )
+                            (\( language, string ) ->
+                                ( language, CodeGen.string string )
                             )
                     )
                 )
 
-        Template name args pairs ->
+        Template name args languages ->
             CodeGen.funDecl Nothing
                 Nothing
                 name
                 (List.map CodeGen.varPattern args)
                 (CodeGen.record
-                    (pairs
+                    (languages
                         |> Dict.toList
                         |> List.map
-                            (\( key, list ) ->
-                                ( key
+                            (\( language, list ) ->
+                                ( language
                                 , list
                                     |> List.map
                                         (\item ->
@@ -396,23 +488,55 @@ toDeclaration t =
                     )
                 )
 
-        Choice name pairs ->
+        Choice name languages ->
             CodeGen.valDecl Nothing
                 Nothing
                 name
-                (pairs
+                (languages
                     |> Dict.toList
                     |> List.map
-                        (\( key, pairs2 ) ->
-                            ( key
-                            , pairs2
+                        (\( language, choices ) ->
+                            ( language
+                            , choices
                                 |> Dict.toList
-                                |> List.map (\( key2, string ) -> ( key2, CodeGen.string string ))
+                                |> List.map (\( choiceKey, string ) -> ( choiceKey, CodeGen.string string ))
                                 |> CodeGen.record
                             )
                         )
                     |> CodeGen.record
                 )
 
-        ChoiceTemplate name _ ->
-            CodeGen.valDecl Nothing Nothing name (CodeGen.string "TODO")
+        TemplateChoice name args languages ->
+            CodeGen.funDecl Nothing
+                Nothing
+                name
+                (List.map CodeGen.varPattern args)
+                (CodeGen.record
+                    (languages
+                        |> Dict.toList
+                        |> List.map
+                            (\( language, choices ) ->
+                                ( language
+                                , choices
+                                    |> Dict.toList
+                                    |> List.map
+                                        (\( choiceKey, list ) ->
+                                            ( choiceKey
+                                            , list
+                                                |> List.map
+                                                    (\item ->
+                                                        case item of
+                                                            Text str ->
+                                                                CodeGen.string str
+
+                                                            Placeholder str ->
+                                                                CodeGen.val str
+                                                    )
+                                                |> CodeGen.list
+                                            )
+                                        )
+                                    |> CodeGen.record
+                                )
+                            )
+                    )
+                )
