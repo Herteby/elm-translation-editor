@@ -10786,7 +10786,7 @@ var $elm$core$Basics$never = function (_v0) {
 	}
 };
 var $elm$browser$Browser$element = _Browser_element;
-var $author$project$Main$code = 'module Translations exposing (..)\n       \ncases =\n   { sv = {singular= "ärende",plural= "ärenden" }\n   , dk = {singular= "ærinde",plural= "ærinder" }\n   , en = {singular= "case", plural="cases" }\n   }\n';
+var $author$project$Main$code = 'module Translations exposing (..)\n       \nwelcome =\n    { sv = "Välkommen"\n    , dk = "Velkommen"\n    , en = "Welcome"\n    }\n\n\ncases =\n    { sv = { singular = "ärende", plural = "ärenden" }\n    , dk = { singular = "ærinde", plural = "ærinder" }\n    , en = { singular = "case", plural = "cases" }\n    }\n\n\nhello name =\n    { sv = [ "Hej ", name, "!" ]\n    , dk = [ "Hej ", name, "!" ]\n    , en = [ "Hi ", name, "!" ]\n    }\n';
 var $elm$core$Result$andThen = F2(
 	function (callback, result) {
 		if (result.$ === 'Ok') {
@@ -21057,8 +21057,8 @@ var $author$project$Main$toDeclaration = function (t) {
 			return _Debug_todo(
 				'Main',
 				{
-					start: {line: 404, column: 13},
-					end: {line: 404, column: 23}
+					start: {line: 418, column: 13},
+					end: {line: 418, column: 23}
 				})('TODO');
 	}
 };
@@ -21721,7 +21721,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "63640" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "55759" + '/');
 
   ws.onmessage = function (event) {
     checkedAssets = {};

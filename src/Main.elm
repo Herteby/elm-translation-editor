@@ -19,11 +19,25 @@ import Maybe.Extra as Maybe
 code =
     """module Translations exposing (..)
        
+welcome =
+    { sv = "Välkommen"
+    , dk = "Velkommen"
+    , en = "Welcome"
+    }
+
+
 cases =
-   { sv = {singular= "ärende",plural= "ärenden" }
-   , dk = {singular= "ærinde",plural= "ærinder" }
-   , en = {singular= "case", plural="cases" }
-   }
+    { sv = { singular = "ärende", plural = "ärenden" }
+    , dk = { singular = "ærinde", plural = "ærinder" }
+    , en = { singular = "case", plural = "cases" }
+    }
+
+
+hello name =
+    { sv = [ "Hej ", name, "!" ]
+    , dk = [ "Hej ", name, "!" ]
+    , en = [ "Hi ", name, "!" ]
+    }
 """
 
 
