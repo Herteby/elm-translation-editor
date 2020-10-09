@@ -3,4 +3,4 @@ parcelRequire=function(e,r,t,n){var i,o="function"==typeof parcelRequire&&parcel
 },{}],"mpVp":[function(require,module,exports) {
 "use strict";var e=require("./Main.elm");e.Elm.Main.init({node:document.querySelector("main")});
 },{"./Main.elm":"asWa"}]},{},["mpVp"], null)
-//# sourceMappingURL=/script.0223b61a.js.map
+//# sourceMappingURL=/elm-translation-editor/script.0223b61a.js.map

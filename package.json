@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "build": "parcel build src/Index.html -d docs"
+    "build": "parcel build src/Index.html -d docs --public-url /elm-translation-editor"
   },
   "devDependencies": {
     "cssnano": "^4.1.10",
