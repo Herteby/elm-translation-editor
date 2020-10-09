@@ -1,0 +1,41 @@
+body{
+    font-family: sans-serif;
+    background: #eeeeee;
+}
+
+main{
+    display: flex;
+    flex-direction: column;
+}
+main > * {
+    margin:10px;
+}
+textarea {
+    height:300px;
+    border:1px solid #aaa;
+    padding:10px;
+}
+.translation {
+    display: flex;
+    flex-direction: column;
+    border:1px solid #aaa;
+    padding: 10px;
+}
+label{
+    display:flex;
+    align-items: center;
+    margin:10px 0px;
+}
+input{
+    margin-left:10px;
+    padding:10px;
+    flex-grow:1;
+    border:1px solid #aaa;
+}
+pre{
+    padding:20px;
+    border:1px solid #aaa;
+    background: white;
+}
+
+/*# sourceMappingURL=/Style.451371b1.css.map */
