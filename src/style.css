@@ -35,22 +35,23 @@ textarea {
 }
 label{
     display:flex;
+    width: 100%;
     margin-top:10px;
     border-radius: 5px;
     overflow: hidden;
 }
-label span {
+label > span {
     display: flex;
     align-items: center;
     background: #0e94d7;
     color: white;
     padding: 0 10px;
 }
-label.invalid span {
-    background: #600;
+label.invalid > span, span.invalid {
+    background: #a33;
 }
-label.invalid input {
-    background: #faa;
+textarea.invalid {
+    background: #fdd;
 }
 pre{
     padding:20px;
@@ -74,7 +75,8 @@ pre{
 }
 .card {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     padding: 10px;
     border-radius: 5px;
     color:#aaaaaa;
@@ -84,6 +86,29 @@ pre{
 }
 .card.todo {
     background: #feb;
+}
+.placeholders {
+    display: flex;
+}
+.placeholders > div {
+    font-weight: bold;
+    margin-left: 10px;
+}
+.choices {
+    display: grid;
+    grid-template-columns: min-content auto;
+    flex-grow: 1;
+}
+.choices > span {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    background: #6aaed0;
+    color: white;
+    padding: 0 10px;
+}
+.choices > span.invalid {
+    background: #d06a6a;
 }
 .autoexpand {
     position: relative;

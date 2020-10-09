@@ -235,30 +235,69 @@ editor translations =
                                         (Dict.toList languages)
 
                                 Choice languages ->
-                                    [ div [ class "columns" ] [] ]
-
-                                Template placeholders languages ->
                                     List.map
-                                        (\( language, { string, expressions } ) ->
-                                            textInput language string (expressions == Nothing) (SetTranslation i Nothing)
+                                        (\( language, choices ) ->
+                                            choiceInput language (Dict.map (\_ c -> ( c, False )) choices) (SetTranslation i)
                                         )
                                         (Dict.toList languages)
 
+                                Template placeholders languages ->
+                                    viewPlaceholders placeholders
+                                        :: List.map
+                                            (\( language, { string, expressions } ) ->
+                                                textInput language string (expressions == Nothing) (SetTranslation i Nothing)
+                                            )
+                                            (Dict.toList languages)
+
                                 TemplateChoice placeholders languages ->
-                                    [ div [ class "columns" ] [] ]
+                                    viewPlaceholders placeholders
+                                        :: List.map
+                                            (\( language, choices ) ->
+                                                choiceInput language
+                                                    (Dict.map (\_ { string, expressions } -> ( string, expressions == Nothing )) choices)
+                                                    (SetTranslation i)
+                                            )
+                                            (Dict.toList languages)
                            )
             )
             translations
 
 
-textInput : String -> String -> Bool -> (String -> String -> msg) -> Html msg
+viewPlaceholders : List String -> Html msg
+viewPlaceholders placeholders =
+    div [ class "placeholders" ]
+        (List.map (\p -> div [] [ text <| "{" ++ p ++ "}" ]) placeholders)
+
+
+textInput : String -> String -> Bool -> (Language -> String -> msg) -> Html msg
 textInput language string invalid msg =
-    label [ classList [ ( "invalid", invalid ) ] ]
+    label [ classList [ ( "invalid", invalid || string == "" ) ] ]
         [ span [] [ text language ]
-        , div [ class "autoexpand" ]
-            [ textarea [ onInput (msg language), value string ] []
-            , div [] [ text (string ++ "_") ]
-            ]
+        , autoExpand string (invalid || string == "") (msg language)
+        ]
+
+
+choiceInput : String -> Dict ChoiceKey ( String, Bool ) -> (Maybe ChoiceKey -> Language -> String -> msg) -> Html msg
+choiceInput language choices msg =
+    label [ classList [ ( "invalid", Dict.values choices |> List.any (\( str, invalid ) -> invalid || str == "") ) ] ]
+        [ span [] [ text language ]
+        , div [ class "choices" ]
+            (Dict.toList choices
+                |> List.concatMap
+                    (\( choiceKey, ( string, invalid ) ) ->
+                        [ span [ classList [ ( "invalid", invalid || string == "" ) ] ] [ text choiceKey ]
+                        , autoExpand string (invalid || string == "") (msg (Just choiceKey) language)
+                        ]
+                    )
+            )
+        ]
+
+
+autoExpand : String -> Bool -> (String -> msg) -> Html msg
+autoExpand string invalid msg =
+    div [ classList [ ( "autoexpand", True ), ( "invalid", invalid ) ] ]
+        [ textarea [ onInput msg, value string ] []
+        , div [] [ text (string ++ "_") ]
         ]
 
 
