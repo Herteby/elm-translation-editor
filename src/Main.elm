@@ -587,10 +587,14 @@ templateToExpressions args templateBody =
             List.map CodeGen.val matches
 
         strings =
-            Regex.split rgx templateBody |> List.map CodeGen.string
+            Regex.split rgx templateBody
+
+        gullWings =
+            (String.join "" strings |> String.contains "{")
+                || (String.join "" strings |> String.contains "}")
     in
-    if List.all (\p -> List.member p args) matches then
-        Just <| List.interweave strings vals
+    if List.all (\p -> List.member p args) matches && not gullWings then
+        Just <| List.interweave (List.map CodeGen.string strings) vals
 
     else
         Nothing
