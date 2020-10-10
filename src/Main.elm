@@ -1,4 +1,4 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Browser
 import Dict exposing (Dict)
@@ -11,15 +11,26 @@ import Elm.Syntax.Expression exposing (Expression(..), FunctionImplementation)
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern exposing (Pattern(..))
 import File exposing (File)
+import File.Download as Download
 import File.Select
 import Html exposing (..)
-import Html.Attributes exposing (class, classList, placeholder, style, value)
+import Html.Attributes exposing (autofocus, class, classList, disabled, placeholder, style, value)
 import Html.Events exposing (onClick, onInput)
+import Html.Lazy as Lazy
 import List.Extra as List
 import Maybe.Extra as Maybe
 import Regex exposing (Regex)
 import Result.Extra as Result
 import Task
+
+
+port confirmBack : () -> Cmd msg
+
+
+port confirmedBack : (() -> msg) -> Sub msg
+
+
+port copyToClipBoard : String -> Cmd msg
 
 
 exampleCode =
@@ -32,18 +43,14 @@ welcome =
    , sv = "Välkommen"
    }
    
-welcome =
-   { dk = "Velkommen"
-   , en = "Welcome"
-   , sv = "Välkommen"
-   }
    
-{-| -}
+
 apples =
    { dk = { singular = "æble", plural = "æbler" }
    , en = { singular = "apple", plural = "apples" }
    , sv = { singular = "äpple", plural = "äpplen" }
    }
+   
 
 {-| -}
 hi name =
@@ -51,26 +58,21 @@ hi name =
    , en = [ "Hi ", name, "!" ]
    , sv = [ "Hej ", name, "!" ]
    }
+   
 
 {-| -}
 thereAreNCases n =
    { sv = { singular = [ "Det finns ", n, " ärende" ], plural = [ "Det finns ", n, " ärenden" ] }
-   , dk = { singular = [ "", n, "" ], plural = [ "", n, "" ] }
+   , dk = { singular = [], plural = [] }
    , en = { singular = [ "There is ", n, " case" ], plural = [ "There are ", n, " cases" ] }
    }
 
 """
 
 
-type alias Model =
-    { page : Page
-    , code : String
-    }
-
-
-type Page
-    = Start
-    | Edit (List Definition)
+type Model
+    = Start String
+    | Editor (List Definition)
     | Done (List Definition)
 
 
@@ -81,6 +83,12 @@ type Msg
     | AddExampleCode
     | StartEdit (List Definition)
     | SetTranslation Int (Maybe ChoiceKey) Language String
+    | DoneEditing
+    | BackToEditor
+    | BackToStart
+    | ConfirmedBackToStart
+    | Download
+    | CopyToClipBoard
 
 
 main =
@@ -88,106 +96,121 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = always Sub.none
+        , subscriptions = always (confirmedBack (always ConfirmedBackToStart))
         }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { page = Start
-      , code = ""
-      }
+    ( Start ""
     , Cmd.none
     )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        SelectFile ->
+    case ( model, msg ) of
+        ( Start _, SelectFile ) ->
             ( model, File.Select.file [] GotFile )
 
-        GotFile file ->
+        ( Start _, GotFile file ) ->
             let
                 _ =
                     Debug.log "file" (File.mime file)
             in
             ( model, Task.perform SetCode (File.toString file) )
 
-        SetCode str ->
-            ( { model | code = str }, Cmd.none )
+        ( Start _, SetCode str ) ->
+            ( Start str, Cmd.none )
 
-        AddExampleCode ->
-            ( { model | code = exampleCode }, Cmd.none )
+        ( Start _, AddExampleCode ) ->
+            ( Start exampleCode, Cmd.none )
 
-        StartEdit translations ->
-            ( { model | page = Edit translations }, Cmd.none )
+        ( Start _, StartEdit translations ) ->
+            ( Editor translations, Cmd.none )
 
-        SetTranslation index choiceKey language string ->
-            case model.page of
-                Edit translations ->
-                    ( { model
-                        | page =
-                            Edit <|
-                                List.indexedMap
-                                    (\i def ->
-                                        if i == index then
-                                            case ( def.translation, choiceKey ) of
-                                                ( Basic languages, Nothing ) ->
-                                                    { def
-                                                        | translation = Basic (Dict.insert language string languages)
-                                                        , checked = True
+        ( Editor translations, SetTranslation index choiceKey language string ) ->
+            ( translations
+                |> List.indexedMap
+                    (\i def ->
+                        if i == index then
+                            case ( def.translation, choiceKey ) of
+                                ( Basic languages, Nothing ) ->
+                                    { def
+                                        | translation = Basic (Dict.insert language string languages)
+                                    }
+
+                                ( Choice languages, Just key ) ->
+                                    { def
+                                        | translation = Choice (Dict.update language (Maybe.map (Dict.insert key string)) languages)
+                                    }
+
+                                ( Template args languages, Nothing ) ->
+                                    { def
+                                        | translation =
+                                            Template args
+                                                (Dict.insert language
+                                                    { string = string
+                                                    , expressions = templateToExpressions args string
                                                     }
+                                                    languages
+                                                )
+                                    }
 
-                                                ( Choice languages, Just key ) ->
-                                                    { def
-                                                        | translation = Choice (Dict.update language (Maybe.map (Dict.insert key string)) languages)
-                                                        , checked = True
-                                                    }
+                                ( TemplateChoice args languages, Just key ) ->
+                                    { def
+                                        | translation =
+                                            TemplateChoice args
+                                                (Dict.update language
+                                                    (Maybe.map
+                                                        (Dict.insert key
+                                                            { string = string
+                                                            , expressions = templateToExpressions args string
+                                                            }
+                                                        )
+                                                    )
+                                                    languages
+                                                )
+                                    }
 
-                                                ( Template args languages, Nothing ) ->
-                                                    { def
-                                                        | translation =
-                                                            Template args
-                                                                (Dict.insert language
-                                                                    { string = string
-                                                                    , expressions = templateToExpressions args string
-                                                                    }
-                                                                    languages
-                                                                )
-                                                        , checked = True
-                                                    }
+                                _ ->
+                                    def
 
-                                                ( TemplateChoice args languages, Just key ) ->
-                                                    { def
-                                                        | translation =
-                                                            TemplateChoice args
-                                                                (Dict.update language
-                                                                    (Maybe.map
-                                                                        (Dict.insert key
-                                                                            { string = string
-                                                                            , expressions = templateToExpressions args string
-                                                                            }
-                                                                        )
-                                                                    )
-                                                                    languages
-                                                                )
-                                                        , checked = True
-                                                    }
-
-                                                _ ->
-                                                    def
-
-                                        else
-                                            def
-                                    )
-                                    translations
-                      }
-                    , Cmd.none
+                        else
+                            def
                     )
+                |> List.indexedMap
+                    (\i d ->
+                        if i == index then
+                            { d | checked = translationIsValid d.translation }
 
-                _ ->
-                    ( model, Cmd.none )
+                        else
+                            d
+                    )
+                |> Editor
+            , Cmd.none
+            )
+
+        ( Editor definitions, DoneEditing ) ->
+            ( Done definitions, Cmd.none )
+
+        ( Done definitions, BackToEditor ) ->
+            ( Editor definitions, Cmd.none )
+
+        ( Editor _, BackToStart ) ->
+            ( model, confirmBack () )
+
+        ( Editor _, ConfirmedBackToStart ) ->
+            ( Start "", Cmd.none )
+
+        ( Done definitions, Download ) ->
+            ( model, Download.string "Translations.elm" "text/plain" (print definitions) )
+
+        ( Done definitions, CopyToClipBoard ) ->
+            ( model, definitions |> print |> copyToClipBoard )
+
+        _ ->
+            ( model, Cmd.none )
 
 
 view : Model -> Html Msg
@@ -195,14 +218,20 @@ view model =
     div []
         [ header [] [ div [ class "container" ] [ text "Elm Translation Editor" ] ]
         , main_ [ class "container" ] <|
-            case model.page of
-                Start ->
+            case model of
+                Start code ->
                     [ div [ class "toolbar" ]
                         [ button [ onClick SelectFile ] [ text "Upload a translation file" ]
                         , span [ class "addExample", onClick AddExampleCode ] [ text "click here to insert example code" ]
                         ]
-                    , textarea [ value model.code, placeholder "...or paste the contents here", onInput SetCode ] []
-                    , case translationsFromCode model.code of
+                    , textarea
+                        [ value code
+                        , placeholder "...or paste the contents here"
+                        , onInput SetCode
+                        , autofocus True
+                        ]
+                        []
+                    , case translationsFromCode code of
                         Ok translations ->
                             button [ onClick (StartEdit translations) ] [ text "Edit translations" ]
 
@@ -210,57 +239,77 @@ view model =
                             div [ class "error" ] [ text err ]
                     ]
 
-                Edit translations ->
-                    [ editor translations ]
+                Editor translations ->
+                    [ editor translations
+                    , footer []
+                        [ div [ class "container" ]
+                            [ button [ onClick BackToStart ] [ text "Back to file import" ]
+                            , button
+                                [ if List.all .checked translations then
+                                    onClick DoneEditing
+
+                                  else
+                                    disabled True
+                                ]
+                                [ text "Generate translation file" ]
+                            ]
+                        ]
+                    ]
 
                 Done translations ->
-                    [ pre [] [ text (print translations) ] ]
+                    [ div [ class "toolbar" ]
+                        [ button [ onClick Download ] [ text "Download file" ]
+                        , button [ onClick CopyToClipBoard ] [ text "Copy to clipboard" ]
+                        ]
+                    , pre [] [ text (print translations) ]
+                    , footer [] [ div [ class "container" ] [ button [ onClick BackToEditor ] [ text "Back to editor" ] ] ]
+                    ]
         ]
 
 
 editor : List Definition -> Html Msg
 editor translations =
-    div [] <|
-        List.indexedMap
-            (\i { name, translation, checked } ->
-                div [ classList [ ( "card", True ), ( "todo", not checked ) ] ] <|
-                    div []
-                        [ text name ]
-                        :: (case translation of
-                                Basic languages ->
-                                    List.map
-                                        (\( language, string ) ->
-                                            textInput language string False (SetTranslation i Nothing)
-                                        )
-                                        (Dict.toList languages)
+    div [] <| List.indexedMap (Lazy.lazy2 editorCard) translations
 
-                                Choice languages ->
-                                    List.map
-                                        (\( language, choices ) ->
-                                            choiceInput language (Dict.map (\_ c -> ( c, False )) choices) (SetTranslation i)
-                                        )
-                                        (Dict.toList languages)
 
-                                Template placeholders languages ->
-                                    viewPlaceholders placeholders
-                                        :: List.map
-                                            (\( language, { string, expressions } ) ->
-                                                textInput language string (expressions == Nothing) (SetTranslation i Nothing)
-                                            )
-                                            (Dict.toList languages)
+editorCard : Int -> Definition -> Html Msg
+editorCard index { name, translation, checked } =
+    div [ classList [ ( "card", True ), ( "todo", not checked ) ] ] <|
+        div []
+            [ text name ]
+            :: (case translation of
+                    Basic languages ->
+                        List.map
+                            (\( language, string ) ->
+                                textInput language string False (SetTranslation index Nothing)
+                            )
+                            (Dict.toList languages)
 
-                                TemplateChoice placeholders languages ->
-                                    viewPlaceholders placeholders
-                                        :: List.map
-                                            (\( language, choices ) ->
-                                                choiceInput language
-                                                    (Dict.map (\_ { string, expressions } -> ( string, expressions == Nothing )) choices)
-                                                    (SetTranslation i)
-                                            )
-                                            (Dict.toList languages)
-                           )
-            )
-            translations
+                    Choice languages ->
+                        List.map
+                            (\( language, choices ) ->
+                                choiceInput language (Dict.map (\_ c -> ( c, False )) choices) (SetTranslation index)
+                            )
+                            (Dict.toList languages)
+
+                    Template placeholders languages ->
+                        viewPlaceholders placeholders
+                            :: List.map
+                                (\( language, { string, expressions } ) ->
+                                    textInput language string (expressions == Nothing) (SetTranslation index Nothing)
+                                )
+                                (Dict.toList languages)
+
+                    TemplateChoice placeholders languages ->
+                        viewPlaceholders placeholders
+                            :: List.map
+                                (\( language, choices ) ->
+                                    choiceInput language
+                                        (Dict.map (\_ { string, expressions } -> ( string, expressions == Nothing )) choices)
+                                        (SetTranslation index)
+                                )
+                                (Dict.toList languages)
+               )
 
 
 viewPlaceholders : List String -> Html msg
@@ -306,6 +355,22 @@ type alias Definition =
     , translation : Translation
     , checked : Bool
     }
+
+
+translationIsValid : Translation -> Bool
+translationIsValid translation =
+    case translation of
+        Basic languages ->
+            Dict.values languages |> List.all ((/=) "")
+
+        Choice languages ->
+            Dict.values languages |> List.concatMap Dict.values |> List.all ((/=) "")
+
+        Template args languages ->
+            Dict.values languages |> List.all (\{ string, expressions } -> expressions /= Nothing && string /= "")
+
+        TemplateChoice args languages ->
+            Dict.values languages |> List.concatMap Dict.values |> List.all (\{ string, expressions } -> expressions /= Nothing && string /= "")
 
 
 type Translation
@@ -375,7 +440,7 @@ fromAst (Node range d) =
                     (\translation ->
                         { name = Node.value declaration |> .name |> Node.value
                         , translation = translation
-                        , checked = Maybe.isJust documentation
+                        , checked = Maybe.isJust documentation && translationIsValid translation
                         }
                     )
 
@@ -599,7 +664,7 @@ print definition =
         []
         (List.map toDeclaration definition)
         Nothing
-        |> Pretty.pretty 999
+        |> Pretty.pretty 100
 
 
 toDeclaration : Definition -> CodeGen.Declaration

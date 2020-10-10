@@ -1,7 +1,7 @@
 body{
     font-family: sans-serif;
     background: #eeeeee;
-    margin: 0px;
+    margin: 0 0 70px 0;
 }
 header {
     background: #0e94d7;
@@ -25,6 +25,10 @@ button{
     padding: 10px;
     line-height: 1em;
     cursor: pointer;
+}
+button[disabled]{
+    background: #ddd;
+    cursor: default;
 }
 textarea {
     height:300px;
@@ -50,14 +54,24 @@ label > span {
 label.invalid > span, span.invalid {
     background: #a33;
 }
-textarea.invalid {
-    background: #fdd;
-}
 pre{
     padding:20px;
     background: white;
     border-radius: 5px;
     box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
+}
+footer {
+    position: fixed;
+    bottom: 0px;
+    left: 0px;
+    right: 0px;
+    padding: 10px;
+    background: white;
+    box-shadow: 0px 2px 8px rgba(0,0,0,0.2);
+}
+footer .container {
+    display: flex;
+    justify-content: space-between;
 }
 .container{
     max-width: 800px;
@@ -138,4 +152,7 @@ pre{
 }
 .autoexpand div {
     word-break: break-all;
+}
+.autoexpand.invalid textarea{
+    background: #fdd;
 }
