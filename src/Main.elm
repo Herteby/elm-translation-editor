@@ -228,7 +228,7 @@ view model =
                         text ""
                 ]
             ]
-        , main_ [ class "container" ] <|
+        , main_ [] <|
             case model of
                 Start code ->
                     [ div [ class "toolbar" ]
