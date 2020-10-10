@@ -32,7 +32,7 @@ port confirmBack : () -> Cmd msg
 port confirmedBack : (() -> msg) -> Sub msg
 
 
-port copyToClipBoard : String -> Cmd msg
+port copyToClipboard : String -> Cmd msg
 
 
 exampleCode =
@@ -116,10 +116,6 @@ update msg model =
             ( model, File.Select.file [] GotFile )
 
         ( Start _, GotFile file ) ->
-            let
-                _ =
-                    Debug.log "file" (File.mime file)
-            in
             ( model, Task.perform SetCode (File.toString file) )
 
         ( Start _, SetCode str ) ->
@@ -209,7 +205,7 @@ update msg model =
             ( model, Download.string (getFileName moduleName) "text/plain" (print moduleName definitions) )
 
         ( Done moduleName definitions, CopyToClipBoard ) ->
-            ( model, print moduleName definitions |> copyToClipBoard )
+            ( model, print moduleName definitions |> copyToClipboard )
 
         _ ->
             ( model, Cmd.none )
