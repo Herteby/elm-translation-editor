@@ -694,16 +694,16 @@ getTemplate { arguments, expression, name } =
 
 
 print : ModuleName -> List Definition -> String
-print moduleName definition =
+print moduleName definitions =
     CodeGen.file
         (CodeGen.normalModule moduleName
             (List.map
                 (.name >> CodeGen.funExpose)
-                definition
+                definitions
             )
         )
         []
-        (List.map toDeclaration definition)
+        (definitions |> List.sortBy .name |> List.map toDeclaration )
         Nothing
         |> Pretty.pretty 100
 
