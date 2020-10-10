@@ -8,6 +8,8 @@ import Elm.Pretty as Pretty
 import Elm.Processing
 import Elm.Syntax.Declaration exposing (Declaration(..))
 import Elm.Syntax.Expression exposing (Expression(..), FunctionImplementation)
+import Elm.Syntax.Module exposing (Module(..))
+import Elm.Syntax.ModuleName exposing (ModuleName)
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern exposing (Pattern(..))
 import File exposing (File)
@@ -72,8 +74,8 @@ thereAreNCases n =
 
 type Model
     = Start String
-    | Editor (List Definition)
-    | Done (List Definition)
+    | Editor ModuleName (List Definition)
+    | Done ModuleName (List Definition)
 
 
 type Msg
@@ -81,7 +83,7 @@ type Msg
     | SelectFile
     | GotFile File
     | AddExampleCode
-    | StartEdit (List Definition)
+    | StartEdit ( List String, List Definition )
     | SetTranslation Int (Maybe ChoiceKey) Language String
     | DoneEditing
     | BackToEditor
@@ -126,11 +128,11 @@ update msg model =
         ( Start _, AddExampleCode ) ->
             ( Start exampleCode, Cmd.none )
 
-        ( Start _, StartEdit translations ) ->
-            ( Editor translations, Cmd.none )
+        ( Start _, StartEdit ( moduleName, definitions ) ) ->
+            ( Editor moduleName definitions, Cmd.none )
 
-        ( Editor translations, SetTranslation index choiceKey language string ) ->
-            ( translations
+        ( Editor moduleName definitions, SetTranslation index choiceKey language string ) ->
+            ( definitions
                 |> List.indexedMap
                     (\i def ->
                         if i == index then
@@ -187,27 +189,27 @@ update msg model =
                         else
                             d
                     )
-                |> Editor
+                |> Editor moduleName
             , Cmd.none
             )
 
-        ( Editor definitions, DoneEditing ) ->
-            ( Done definitions, Cmd.none )
+        ( Editor moduleName definitions, DoneEditing ) ->
+            ( Done moduleName definitions, Cmd.none )
 
-        ( Done definitions, BackToEditor ) ->
-            ( Editor definitions, Cmd.none )
+        ( Done moduleName definitions, BackToEditor ) ->
+            ( Editor moduleName definitions, Cmd.none )
 
-        ( Editor _, BackToStart ) ->
+        ( Editor _ _, BackToStart ) ->
             ( model, confirmBack () )
 
-        ( Editor _, ConfirmedBackToStart ) ->
+        ( Editor _ _, ConfirmedBackToStart ) ->
             ( Start "", Cmd.none )
 
-        ( Done definitions, Download ) ->
-            ( model, Download.string "Translations.elm" "text/plain" (print definitions) )
+        ( Done moduleName definitions, Download ) ->
+            ( model, Download.string (getFileName moduleName) "text/plain" (print moduleName definitions) )
 
-        ( Done definitions, CopyToClipBoard ) ->
-            ( model, definitions |> print |> copyToClipBoard )
+        ( Done moduleName definitions, CopyToClipBoard ) ->
+            ( model, print moduleName definitions |> copyToClipBoard )
 
         _ ->
             ( model, Cmd.none )
@@ -215,8 +217,21 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ header [] [ div [ class "container" ] [ text "Elm Translation Editor" ] ]
+    div [ class "app" ]
+        [ header []
+            [ div [ class "container" ]
+                [ div [] [ text "Elm Translation Editor" ]
+                , case model of
+                    Editor moduleName _ ->
+                        div [] [ text <| getFileName moduleName ]
+
+                    Done moduleName _ ->
+                        div [] [ text <| getFileName moduleName ]
+
+                    Start _ ->
+                        text ""
+                ]
+            ]
         , main_ [ class "container" ] <|
             case model of
                 Start code ->
@@ -239,7 +254,7 @@ view model =
                             div [ class "error" ] [ text err ]
                     ]
 
-                Editor translations ->
+                Editor _ translations ->
                     [ editor translations
                     , footer []
                         [ div [ class "container" ]
@@ -256,12 +271,12 @@ view model =
                         ]
                     ]
 
-                Done translations ->
+                Done moduleName translations ->
                     [ div [ class "toolbar" ]
                         [ button [ onClick Download ] [ text "Download file" ]
                         , button [ onClick CopyToClipBoard ] [ text "Copy to clipboard" ]
                         ]
-                    , pre [] [ text (print translations) ]
+                    , pre [] [ text (print moduleName translations) ]
                     , footer [] [ div [ class "container" ] [ button [ onClick BackToEditor ] [ text "Back to editor" ] ] ]
                     ]
         ]
@@ -398,7 +413,7 @@ type alias ChoiceKey =
     String
 
 
-translationsFromCode : String -> Result String (List Definition)
+translationsFromCode : String -> Result String ( List String, List Definition )
 translationsFromCode str =
     if str == "" then
         Err ""
@@ -409,19 +424,32 @@ translationsFromCode str =
             |> Result.mapError (always "Syntax Error")
             |> Result.map (Elm.Processing.process Elm.Processing.init)
             |> Result.andThen
-                (.declarations
-                    >> List.map fromAst
-                    >> Result.combine
-                    >> Result.map
-                        (List.sortBy
-                            (\d ->
-                                if d.checked then
-                                    1
+                (\file ->
+                    let
+                        moduleDef =
+                            case file.moduleDefinition of
+                                Node _ (NormalModule moduleData) ->
+                                    Ok <| Node.value moduleData.moduleName
 
-                                else
-                                    0
-                            )
-                        )
+                                _ ->
+                                    Err "Unsupported module type"
+
+                        definitions =
+                            file.declarations
+                                |> List.map fromAst
+                                |> Result.combine
+                                |> Result.map
+                                    (List.sortBy
+                                        (\d ->
+                                            if d.checked then
+                                                1
+
+                                            else
+                                                0
+                                        )
+                                    )
+                    in
+                    Result.map2 Tuple.pair moduleDef definitions
                 )
 
 
@@ -652,10 +680,10 @@ getTemplate { arguments, expression, name } =
             Nothing
 
 
-print : List Definition -> String
-print definition =
+print : ModuleName -> List Definition -> String
+print moduleName definition =
     CodeGen.file
-        (CodeGen.normalModule [ "Translations" ]
+        (CodeGen.normalModule moduleName
             (List.map
                 (.name >> CodeGen.funExpose)
                 definition
@@ -752,3 +780,11 @@ toDeclaration { name, translation, checked } =
                             )
                     )
                 )
+
+
+getFileName : ModuleName -> String
+getFileName =
+    List.reverse
+        >> List.head
+        >> Maybe.unwrap "Translations.elm"
+            (\name -> name ++ ".elm")

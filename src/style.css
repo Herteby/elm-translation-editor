@@ -16,6 +16,10 @@ main {
 main > * {
     margin-top:10px;
 }
+h1{
+    font-weight: normal;
+    margin: 20px 0;
+}
 button{
     background: #0e94d7;
     color:white;
@@ -76,6 +80,8 @@ footer .container {
 .container{
     max-width: 800px;
     margin:0 auto;
+    display:flex;
+    justify-content: space-between;
 }
 .toolbar {
     display:flex;
