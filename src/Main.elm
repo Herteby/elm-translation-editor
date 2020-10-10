@@ -74,8 +74,7 @@ thereAreNCases n =
 
 type Model
     = Start String
-    | Editor ModuleName (List Definition)
-    | Done ModuleName (List Definition)
+    | Editor Bool ModuleName (List Definition)
 
 
 type Msg
@@ -85,12 +84,11 @@ type Msg
     | AddExampleCode
     | StartEdit ( List String, List Definition )
     | SetTranslation Int (Maybe ChoiceKey) Language String
-    | DoneEditing
-    | BackToEditor
     | BackToStart
     | ConfirmedBackToStart
     | Download
     | CopyToClipBoard
+    | TogglePreview
 
 
 main =
@@ -125,9 +123,9 @@ update msg model =
             ( Start exampleCode, Cmd.none )
 
         ( Start _, StartEdit ( moduleName, definitions ) ) ->
-            ( Editor moduleName definitions, Cmd.none )
+            ( Editor False moduleName definitions, Cmd.none )
 
-        ( Editor moduleName definitions, SetTranslation index choiceKey language string ) ->
+        ( Editor _ moduleName definitions, SetTranslation index choiceKey language string ) ->
             ( definitions
                 |> List.indexedMap
                     (\i def ->
@@ -185,27 +183,24 @@ update msg model =
                         else
                             d
                     )
-                |> Editor moduleName
+                |> Editor False moduleName
             , Cmd.none
             )
 
-        ( Editor moduleName definitions, DoneEditing ) ->
-            ( Done moduleName definitions, Cmd.none )
-
-        ( Done moduleName definitions, BackToEditor ) ->
-            ( Editor moduleName definitions, Cmd.none )
-
-        ( Editor _ _, BackToStart ) ->
+        ( Editor _ _ _, BackToStart ) ->
             ( model, confirmBack () )
 
-        ( Editor _ _, ConfirmedBackToStart ) ->
+        ( Editor _ _ _, ConfirmedBackToStart ) ->
             ( Start "", Cmd.none )
 
-        ( Done moduleName definitions, Download ) ->
+        ( Editor _ moduleName definitions, Download ) ->
             ( model, Download.string (getFileName moduleName) "text/plain" (print moduleName definitions) )
 
-        ( Done moduleName definitions, CopyToClipBoard ) ->
+        ( Editor _ moduleName definitions, CopyToClipBoard ) ->
             ( model, print moduleName definitions |> copyToClipboard )
+
+        ( Editor showPreview m d, TogglePreview ) ->
+            ( Editor (not showPreview) m d, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -218,10 +213,7 @@ view model =
             [ div [ class "container" ]
                 [ div [] [ text "Elm Translation Editor" ]
                 , case model of
-                    Editor moduleName _ ->
-                        div [] [ text <| getFileName moduleName ]
-
-                    Done moduleName _ ->
+                    Editor _ moduleName _ ->
                         div [] [ text <| getFileName moduleName ]
 
                     Start _ ->
@@ -233,7 +225,7 @@ view model =
                 Start code ->
                     [ div [ class "toolbar" ]
                         [ button [ onClick SelectFile ] [ text "Upload a translation file" ]
-                        , span [ class "addExample", onClick AddExampleCode ] [ text "click here to insert example code" ]
+                        , span [ class "action", onClick AddExampleCode ] [ text "click here to insert example code" ]
                         ]
                     , textarea
                         [ value code
@@ -250,32 +242,53 @@ view model =
                             div [ class "error" ] [ text err ]
                     ]
 
-                Editor _ translations ->
-                    [ editor translations
+                Editor showPreview moduleName definitions ->
+                    let
+                        valid =
+                            List.all .checked definitions
+                    in
+                    [ editor definitions
+                    , if showPreview then
+                        preview moduleName definitions
+
+                      else
+                        text ""
                     , footer []
                         [ div [ class "container" ]
                             [ button [ onClick BackToStart ] [ text "Back to file import" ]
-                            , button
-                                [ if List.all .checked translations then
-                                    onClick DoneEditing
-
-                                  else
-                                    disabled True
+                            , div [ class "footerButtons" ]
+                                [ span [ class "action", onClickIf valid TogglePreview ]
+                                    [ text "Preview" ]
+                                , button
+                                    [ onClickIf valid Download ]
+                                    [ text "Download file" ]
+                                , button
+                                    [ onClickIf valid CopyToClipBoard ]
+                                    [ text "Copy content to clipboard" ]
                                 ]
-                                [ text "Generate translation file" ]
                             ]
                         ]
                     ]
-
-                Done moduleName translations ->
-                    [ div [ class "toolbar" ]
-                        [ button [ onClick Download ] [ text "Download file" ]
-                        , button [ onClick CopyToClipBoard ] [ text "Copy to clipboard" ]
-                        ]
-                    , pre [] [ text (print moduleName translations) ]
-                    , footer [] [ div [ class "container" ] [ button [ onClick BackToEditor ] [ text "Back to editor" ] ] ]
-                    ]
         ]
+
+
+preview : ModuleName -> List Definition -> Html Msg
+preview moduleName definitions =
+    div [ class "ontop" ]
+        [ div [ class "overlay", onClick TogglePreview ] []
+        , div [ class "preview" ]
+            [ text <| print moduleName definitions
+            ]
+        ]
+
+
+onClickIf : Bool -> msg -> Attribute msg
+onClickIf bool msg =
+    if bool then
+        onClick msg
+
+    else
+        class "disabled"
 
 
 editor : List Definition -> Html Msg
