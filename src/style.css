@@ -203,7 +203,7 @@ footer .container {
     bottom:0px;
     left:0px;
     right:0px;
-    display: flex;
+    display: flex; 
     flex-direction: column;
     align-items: center;
     justify-content: center;
