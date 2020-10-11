@@ -1,3 +1,9 @@
+:root {
+    --primary: #664499;
+    --invalid: #a33;
+    --highlight: #feb;
+}
+
 body {
     font-family: sans-serif;
     background: #eeeeee;
@@ -5,7 +11,7 @@ body {
 }
 
 header {
-    background: #0e94d7;
+    background: var(--primary);
     color: white;
     padding: 20px;
     font-size: 25px;
@@ -28,7 +34,7 @@ h1 {
 }
 
 button {
-    background: #0e94d7;
+    background: var(--primary);
     font-size: 16px;
     color: white;
     border: none;
@@ -62,13 +68,13 @@ label {
 label > span {
     display: flex;
     align-items: center;
-    background: #0e94d7;
+    background: var(--primary);
     color: white;
     padding: 0 10px;
 }
 
 label.invalid > span, span.invalid {
-    background: #a33;
+    background: var(--invalid);
 }
 
 footer {
@@ -107,7 +113,7 @@ footer .container {
 }
 
 .action {
-    color: #0e94d7;
+    color: var(--primary);
     font-weight: bold;
     cursor: pointer;
 }
@@ -128,7 +134,7 @@ footer .container {
 }
 
 .card.todo {
-    background: #feb;
+    background: var(--highlight);
 }
 
 .placeholders {
@@ -150,13 +156,14 @@ footer .container {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    background: #6aaed0;
+    background: var(--primary);
+    opacity: 0.8;
     color: white;
     padding: 0 10px;
 }
 
 .choices > span.invalid {
-    background: #d06a6a;
+    background: var(--invalid);
 }
 
 .autoexpand {
