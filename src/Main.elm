@@ -23,6 +23,7 @@ import List.Extra as List
 import Maybe.Extra as Maybe
 import Regex exposing (Regex)
 import Result.Extra as Result
+import Set
 import Task
 
 
@@ -228,8 +229,8 @@ view model =
             case model of
                 Start code ->
                     [ div [ class "toolbar" ]
-                        [ button [ onClick SelectFile ] [ text "Upload a translation file" ]
-                        , span [ class "action", onClick AddExampleCode ] [ text "click here to insert example code" ]
+                        [ button "Upload a translation file" (Just SelectFile)
+                        , secondary "click here to insert example code" (Just AddExampleCode)
                         ]
                     , textarea
                         [ value code
@@ -238,18 +239,27 @@ view model =
                         , autofocus True
                         ]
                         []
+                    , code
+                        |> translationsFromCode
+                        |> Result.toMaybe
+                        |> Maybe.map StartEdit
+                        |> button "Edit translations"
                     , case translationsFromCode code of
-                        Ok translations ->
-                            button [ onClick (StartEdit translations) ] [ text "Edit translations" ]
-
                         Err err ->
                             div [ class "error" ] [ text err ]
+
+                        Ok _ ->
+                            text ""
                     ]
 
                 Editor showPreview moduleName definitions ->
                     let
-                        valid =
-                            List.all .checked definitions
+                        ifValid msg =
+                            if List.all .checked definitions then
+                                Just msg
+
+                            else
+                                Nothing
                     in
                     [ editor definitions
                     , if showPreview then
@@ -259,21 +269,43 @@ view model =
                         text ""
                     , footer []
                         [ div [ class "container" ]
-                            [ button [ onClick BackToStart ] [ text "Back to file import" ]
+                            [ button "Back to file import" (Just BackToStart)
                             , div [ class "footerButtons" ]
-                                [ span [ class "action", onClickIf valid TogglePreview ]
-                                    [ text "Preview" ]
-                                , button
-                                    [ onClickIf valid Download ]
-                                    [ text "Download file" ]
-                                , button
-                                    [ onClickIf valid CopyFileToClipboard ]
-                                    [ text "Copy content to clipboard" ]
+                                [ secondary "Preview" (ifValid TogglePreview)
+                                , button "Download file" (ifValid Download)
+                                , button "Copy content to clipboard" (ifValid CopyFileToClipboard)
                                 ]
                             ]
                         ]
                     ]
         ]
+
+
+button : String -> Maybe msg -> Html msg
+button string maybeMsg =
+    Html.button
+        [ case maybeMsg of
+            Just msg ->
+                onClick msg
+
+            Nothing ->
+                disabled True
+        ]
+        [ text string ]
+
+
+secondary : String -> Maybe msg -> Html msg
+secondary string maybeMsg =
+    Html.button
+        [ case maybeMsg of
+            Just msg ->
+                onClick msg
+
+            Nothing ->
+                disabled True
+        , class "secondary"
+        ]
+        [ text string ]
 
 
 preview : ModuleName -> List Definition -> Html Msg
@@ -623,7 +655,7 @@ templateToExpressions args templateBody =
             (String.join "" strings |> String.contains "{")
                 || (String.join "" strings |> String.contains "}")
     in
-    if List.all (\p -> List.member p args) matches && not gullWings then
+    if Set.fromList args == Set.fromList matches && not gullWings then
         Just <| List.interweave (List.map CodeGen.string strings) vals
 
     else
