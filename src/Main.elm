@@ -16,7 +16,7 @@ import File exposing (File)
 import File.Download as Download
 import File.Select
 import Html exposing (..)
-import Html.Attributes exposing (autofocus, class, classList, disabled, placeholder, style, value)
+import Html.Attributes exposing (autofocus, class, classList, disabled, placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput)
 import Html.Lazy as Lazy
 import List.Extra as List
@@ -87,7 +87,8 @@ type Msg
     | BackToStart
     | ConfirmedBackToStart
     | Download
-    | CopyToClipBoard
+    | CopyFileToClipboard
+    | CopyToClipboard String
     | TogglePreview
 
 
@@ -196,8 +197,11 @@ update msg model =
         ( Editor _ moduleName definitions, Download ) ->
             ( model, Download.string (getFileName moduleName) "text/plain" (print moduleName definitions) )
 
-        ( Editor _ moduleName definitions, CopyToClipBoard ) ->
+        ( Editor _ moduleName definitions, CopyFileToClipboard ) ->
             ( model, print moduleName definitions |> copyToClipboard )
+
+        ( Editor _ _ _, CopyToClipboard string ) ->
+            ( model, copyToClipboard string )
 
         ( Editor showPreview m d, TogglePreview ) ->
             ( Editor (not showPreview) m d, Cmd.none )
@@ -263,7 +267,7 @@ view model =
                                     [ onClickIf valid Download ]
                                     [ text "Download file" ]
                                 , button
-                                    [ onClickIf valid CopyToClipBoard ]
+                                    [ onClickIf valid CopyFileToClipboard ]
                                     [ text "Copy content to clipboard" ]
                                 ]
                             ]
@@ -336,10 +340,23 @@ editorCard index { name, translation, checked } =
                )
 
 
-viewPlaceholders : List String -> Html msg
+viewPlaceholders : List String -> Html Msg
 viewPlaceholders placeholders =
     div [ class "placeholders" ]
-        (List.map (\p -> div [] [ text <| "{" ++ p ++ "}" ]) placeholders)
+        (List.map
+            (\p ->
+                let
+                    withGullWings =
+                        "{" ++ p ++ "}"
+                in
+                div
+                    [ onClick (CopyToClipboard withGullWings)
+                    , title <| "click to copy " ++ withGullWings ++ " to your clipboard"
+                    ]
+                    [ text withGullWings ]
+            )
+            placeholders
+        )
 
 
 textInput : String -> String -> Bool -> (Language -> String -> msg) -> Html msg
@@ -703,7 +720,7 @@ print moduleName definitions =
             )
         )
         []
-        (definitions |> List.sortBy .name |> List.map toDeclaration )
+        (definitions |> List.sortBy .name |> List.map toDeclaration)
         Nothing
         |> Pretty.pretty 100
 
