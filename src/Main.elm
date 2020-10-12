@@ -2,6 +2,7 @@ port module Main exposing (main)
 
 import Browser
 import Dict exposing (Dict)
+import Dict.Extra as Dict
 import Elm.CodeGen as CodeGen
 import Elm.Parser
 import Elm.Pretty as Pretty
@@ -75,7 +76,12 @@ thereAreNCases n =
 
 type Model
     = Start String
-    | Editor Bool ModuleName (List Definition)
+    | Editor
+        { showPreview : Bool
+        , search : String
+        , moduleName : ModuleName
+        , definitions : List Definition
+        }
 
 
 type Msg
@@ -91,6 +97,7 @@ type Msg
     | CopyFileToClipboard
     | CopyToClipboard String
     | TogglePreview
+    | SetSearch String
 
 
 main =
@@ -125,87 +132,100 @@ update msg model =
             ( Start exampleCode, Cmd.none )
 
         ( Start _, StartEdit ( moduleName, definitions ) ) ->
-            ( Editor False moduleName definitions, Cmd.none )
-
-        ( Editor _ moduleName definitions, SetTranslation index choiceKey language string ) ->
-            ( definitions
-                |> List.indexedMap
-                    (\i def ->
-                        if i == index then
-                            case ( def.translation, choiceKey ) of
-                                ( Basic languages, Nothing ) ->
-                                    { def
-                                        | translation = Basic (Dict.insert language string languages)
-                                    }
-
-                                ( Choice languages, Just key ) ->
-                                    { def
-                                        | translation = Choice (Dict.update language (Maybe.map (Dict.insert key string)) languages)
-                                    }
-
-                                ( Template args languages, Nothing ) ->
-                                    { def
-                                        | translation =
-                                            Template args
-                                                (Dict.insert language
-                                                    { string = string
-                                                    , expressions = templateToExpressions args string
-                                                    }
-                                                    languages
-                                                )
-                                    }
-
-                                ( TemplateChoice args languages, Just key ) ->
-                                    { def
-                                        | translation =
-                                            TemplateChoice args
-                                                (Dict.update language
-                                                    (Maybe.map
-                                                        (Dict.insert key
-                                                            { string = string
-                                                            , expressions = templateToExpressions args string
-                                                            }
-                                                        )
-                                                    )
-                                                    languages
-                                                )
-                                    }
-
-                                _ ->
-                                    def
-
-                        else
-                            def
-                    )
-                |> List.indexedMap
-                    (\i d ->
-                        if i == index then
-                            { d | checked = translationIsValid d.translation }
-
-                        else
-                            d
-                    )
-                |> Editor False moduleName
+            ( Editor
+                { showPreview = False
+                , search = ""
+                , moduleName = moduleName
+                , definitions = definitions
+                }
             , Cmd.none
             )
 
-        ( Editor _ _ _, BackToStart ) ->
+        ( Editor em, SetTranslation index choiceKey language string ) ->
+            ( Editor
+                { em
+                    | definitions =
+                        em.definitions
+                            |> List.indexedMap
+                                (\i def ->
+                                    if i == index then
+                                        case ( def.translation, choiceKey ) of
+                                            ( Basic languages, Nothing ) ->
+                                                { def
+                                                    | translation = Basic (Dict.insert language string languages)
+                                                }
+
+                                            ( Choice languages, Just key ) ->
+                                                { def
+                                                    | translation = Choice (Dict.update language (Maybe.map (Dict.insert key string)) languages)
+                                                }
+
+                                            ( Template args languages, Nothing ) ->
+                                                { def
+                                                    | translation =
+                                                        Template args
+                                                            (Dict.insert language
+                                                                { string = string
+                                                                , expressions = templateToExpressions args string
+                                                                }
+                                                                languages
+                                                            )
+                                                }
+
+                                            ( TemplateChoice args languages, Just key ) ->
+                                                { def
+                                                    | translation =
+                                                        TemplateChoice args
+                                                            (Dict.update language
+                                                                (Maybe.map
+                                                                    (Dict.insert key
+                                                                        { string = string
+                                                                        , expressions = templateToExpressions args string
+                                                                        }
+                                                                    )
+                                                                )
+                                                                languages
+                                                            )
+                                                }
+
+                                            _ ->
+                                                def
+
+                                    else
+                                        def
+                                )
+                            |> List.indexedMap
+                                (\i d ->
+                                    if i == index then
+                                        { d | checked = translationIsValid d.translation }
+
+                                    else
+                                        d
+                                )
+                }
+            , Cmd.none
+            )
+
+        ( Editor _, BackToStart ) ->
             ( model, confirmBack () )
 
-        ( Editor _ _ _, ConfirmedBackToStart ) ->
+        ( Editor _, ConfirmedBackToStart ) ->
             ( Start "", Cmd.none )
 
-        ( Editor _ moduleName definitions, Download ) ->
-            ( model, Download.string (getFileName moduleName) "text/plain" (print moduleName definitions) )
+        ( Editor em, Download ) ->
+            ( model, Download.string (getFileName em.moduleName) "text/plain" (print em.moduleName em.definitions) )
 
-        ( Editor _ moduleName definitions, CopyFileToClipboard ) ->
-            ( model, print moduleName definitions |> copyToClipboard )
+        ( Editor em, CopyFileToClipboard ) ->
+            ( model, print em.moduleName em.definitions |> copyToClipboard )
 
-        ( Editor _ _ _, CopyToClipboard string ) ->
+        ( Editor _, CopyToClipboard string ) ->
             ( model, copyToClipboard string )
 
-        ( Editor showPreview m d, TogglePreview ) ->
-            ( Editor (not showPreview) m d, Cmd.none )
+        ( Editor em, TogglePreview ) ->
+            ( Editor { em | showPreview = not em.showPreview }, Cmd.none )
+
+        ( Editor em, SetSearch string ) ->
+            ( Editor { em | search = string }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -218,8 +238,15 @@ view model =
             [ div [ class "container" ]
                 [ div [] [ text "Elm Translation Editor" ]
                 , case model of
-                    Editor _ moduleName _ ->
-                        div [] [ text <| getFileName moduleName ]
+                    Editor em ->
+                        div [ class "search" ]
+                            [ input
+                                [ value em.search
+                                , onInput SetSearch
+                                , placeholder "Search translations"
+                                ]
+                                []
+                            ]
 
                     Start _ ->
                         text ""
@@ -252,18 +279,24 @@ view model =
                             text ""
                     ]
 
-                Editor showPreview moduleName definitions ->
+                Editor em ->
                     let
                         ifValid msg =
-                            if List.all .checked definitions then
+                            if List.all .checked em.definitions then
                                 Just msg
 
                             else
                                 Nothing
                     in
-                    [ editor definitions
-                    , if showPreview then
-                        preview moduleName definitions
+                    [ editor
+                        (if em.search == "" then
+                            em.definitions
+
+                         else
+                            List.filter (matchDefiniton em.search) em.definitions
+                        )
+                    , if em.showPreview then
+                        preview em.moduleName em.definitions
 
                       else
                         text ""
@@ -279,6 +312,35 @@ view model =
                         ]
                     ]
         ]
+
+
+matchDefiniton : String -> Definition -> Bool
+matchDefiniton search { translation } =
+    case translation of
+        Basic languages ->
+            Dict.any (\_ str -> containsInsensitive search str) languages
+
+        Choice languages ->
+            Dict.any
+                (\_ choices ->
+                    Dict.any (\_ str -> containsInsensitive search str) choices
+                )
+                languages
+
+        Template _ languages ->
+            Dict.any (\_ template -> containsInsensitive search template.string) languages
+
+        TemplateChoice _ languages ->
+            Dict.any
+                (\_ choices ->
+                    Dict.any (\_ template -> containsInsensitive search template.string) choices
+                )
+                languages
+
+
+containsInsensitive : String -> String -> Bool
+containsInsensitive str1 str2 =
+    String.contains (String.toLower str1) (String.toLower str2)
 
 
 button : String -> Maybe msg -> Html msg
