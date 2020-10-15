@@ -20,6 +20,8 @@ import Html exposing (..)
 import Html.Attributes exposing (autofocus, class, classList, disabled, placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput)
 import Html.Lazy as Lazy
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode exposing (Value)
 import List.Extra as List
 import Maybe.Extra as Maybe
 import Regex exposing (Regex)
@@ -29,40 +31,6 @@ import Task
 
 
 port copyToClipboard : String -> Cmd msg
-
-
-exampleCode =
-    """module Translations exposing (..)
-       
-
-welcome =
-   { dk = "Velkommen"
-   , en = "Welcome"
-   , sv = "Välkommen"
-   }
-
-
-apples =
-   { dk = { singular = "æble", plural = "æbler" }
-   , en = { singular = "apple", plural = "apples" }
-   , sv = { singular = "äpple", plural = "äpplen" }
-   }
-   
-
-hi name =
-   { dk = [ "Hej ", name, "!" ]
-   , en = [ "Hi ", name, "!" ]
-   , sv = [ "Hej ", name, "!" ]
-   }
-   
-   
-thereAreNCases n =
-   { sv = { singular = [ "Det finns ", n, " ärende" ], plural = [ "Det finns ", n, " ärenden" ] }
-   , dk = { singular = [], plural = [] }
-   , en = { singular = [ "There is ", n, " case" ], plural = [ "There are ", n, " cases" ] }
-   }
-
-"""
 
 
 type Model
@@ -76,12 +44,43 @@ type alias EditorModel =
     , languages : Dict Language Bool
     , moduleName : ModuleName
     , definitions : List Definition
+    , output : Output
     }
+
+
+type Output
+    = Elm
+    | I18next
 
 
 type Modal
     = Preview
     | Confirm Msg String
+
+
+type Translation
+    = Basic (Dict Language String)
+    | Choice (Dict Language (Dict ChoiceKey String))
+    | Template (List Argument) (Dict Language TemplateBody)
+    | TemplateChoice (List Argument) (Dict Language (Dict ChoiceKey TemplateBody))
+
+
+type alias TemplateBody =
+    { string : String
+    , expressions : Maybe (List CodeGen.Expression)
+    }
+
+
+type alias Argument =
+    String
+
+
+type alias Language =
+    String
+
+
+type alias ChoiceKey =
+    String
 
 
 type Msg
@@ -101,6 +100,7 @@ type Msg
     | ShowPreview
     | SetSearch String
     | ToggleLanguage Language
+    | ToggleOutput
     | CloseModal
 
 
@@ -142,6 +142,7 @@ update msg model =
                 , languages = getLanguages definitions
                 , moduleName = moduleName
                 , definitions = definitions
+                , output = Elm
                 }
             , Cmd.none
             )
@@ -222,13 +223,13 @@ update msg model =
 
         ( Editor em, ClickedDownload ) ->
             if List.all (.translation >> translationIsComplete) em.definitions then
-                ( model, Download.string (getFileName em.moduleName) "text/plain" (print em.moduleName em.definitions) )
+                ( model, download em )
 
             else
                 ( Editor { em | modal = Just (Confirm ConfirmedDownloadIncomplete "Some of the translations are still blank. Are you sure you are done?") }, Cmd.none )
 
         ( Editor em, ConfirmedDownloadIncomplete ) ->
-            ( model, Download.string (getFileName em.moduleName) "text/plain" (print em.moduleName em.definitions) )
+            ( model, download em )
 
         ( Editor em, ClickedCopyFileToClipboard ) ->
             if List.all (.translation >> translationIsComplete) em.definitions then
@@ -252,11 +253,46 @@ update msg model =
         ( Editor em, ToggleLanguage language ) ->
             ( Editor { em | languages = Dict.update language (Maybe.map not) em.languages }, Cmd.none )
 
+        ( Editor em, ToggleOutput ) ->
+            ( Editor
+                { em
+                    | output =
+                        case em.output of
+                            Elm ->
+                                I18next
+
+                            I18next ->
+                                Elm
+                }
+            , Cmd.none
+            )
+
         ( Editor em, CloseModal ) ->
             ( Editor { em | modal = Nothing }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
+
+
+download : EditorModel -> Cmd msg
+download em =
+    case em.output of
+        Elm ->
+            Download.string (elmFileName em.moduleName) "text/plain" (print em.moduleName em.definitions)
+
+        I18next ->
+            let
+                name =
+                    em.moduleName |> List.reverse |> List.head |> Maybe.withDefault "i18n"
+            in
+            em.definitions
+                |> toI18next
+                |> jsonToStrings em.moduleName
+                |> List.map
+                    (\( fileName, content ) ->
+                        Download.string fileName "text/plain" content
+                    )
+                |> Cmd.batch
 
 
 view : Model -> Html Msg
@@ -324,9 +360,18 @@ view model =
                         [ div [ class "container" ]
                             [ button "Back to file import" (Just ClickedBack)
                             , div [ class "footerButtons" ]
-                                [ secondary "Preview" (Just ShowPreview)
+                                [ secondary
+                                    (case em.output of
+                                        Elm ->
+                                            "Output: Elm"
+
+                                        I18next ->
+                                            "Output: i18next"
+                                    )
+                                    (Just ToggleOutput)
+                                , secondary "Preview" (Just ShowPreview)
                                 , button "Download file" (ifValid ClickedDownload)
-                                , button "Copy content to clipboard" (ifValid ClickedCopyFileToClipboard)
+                                , button "Copy content to clipboard" (ifValid ClickedCopyFileToClipboard |> Maybe.filter (\_ -> em.output == Elm))
                                 ]
                             ]
                         ]
@@ -335,13 +380,28 @@ view model =
 
 
 viewModal : EditorModel -> Modal -> Html Msg
-viewModal model m =
+viewModal em m =
     div [ class "ontop" ]
         [ div [ class "overlay", onClick CloseModal ] []
         , div [ class "modal" ]
             [ case m of
                 Preview ->
-                    pre [] [ text (print model.moduleName model.definitions) ]
+                    case em.output of
+                        Elm ->
+                            div []
+                                [ h1 [] [ text <| elmFileName em.moduleName ]
+                                , pre [] [ text <| print em.moduleName em.definitions ]
+                                ]
+
+                        I18next ->
+                            em.definitions
+                                |> toI18next
+                                |> jsonToStrings em.moduleName
+                                |> List.concatMap
+                                    (\( lang, json ) ->
+                                        [ h1 [] [ text lang ], pre [] [ text json ] ]
+                                    )
+                                |> div []
 
                 Confirm msg string ->
                     div []
@@ -424,7 +484,7 @@ preview moduleName definitions =
 languageFilter : Dict Language Bool -> Html Msg
 languageFilter languages =
     div [ class "languageFilter" ] <|
-        span [] [ text "Show languages:" ]
+        span [] [ text "Languages:" ]
             :: (languages
                     |> Dict.toList
                     |> List.map
@@ -603,31 +663,6 @@ getLanguages =
         Dict.empty
 
 
-type Translation
-    = Basic (Dict Language String)
-    | Choice (Dict Language (Dict ChoiceKey String))
-    | Template (List Argument) (Dict Language TemplateBody)
-    | TemplateChoice (List Argument) (Dict Language (Dict ChoiceKey TemplateBody))
-
-
-type alias TemplateBody =
-    { string : String
-    , expressions : Maybe (List CodeGen.Expression)
-    }
-
-
-type alias Argument =
-    String
-
-
-type alias Language =
-    String
-
-
-type alias ChoiceKey =
-    String
-
-
 translationsFromCode : String -> Result String ( List String, List Definition )
 translationsFromCode str =
     if str == "" then
@@ -656,16 +691,28 @@ translationsFromCode str =
                                 |> Result.map
                                     (List.sortBy
                                         (\d ->
-                                            if d.complete then
+                                            ( if d.complete then
                                                 1
 
-                                            else
+                                              else
                                                 0
+                                            , d.name
+                                            )
                                         )
                                     )
                     in
                     Result.map2 Tuple.pair moduleDef definitions
                 )
+
+
+
+{- |> Result.orElseLazy
+   (\() ->
+       Decode.decodeString (definitionsDecoder "foolang") str
+           |> Result.map (Tuple.pair [ "foobar" ])
+           |> Result.mapError (always "Syntax Error")
+   )
+-}
 
 
 fromAst : Node Declaration -> Result String Definition
@@ -993,9 +1040,189 @@ toDeclaration { name, translation, complete } =
                 )
 
 
-getFileName : ModuleName -> String
-getFileName =
+toI18next : List Definition -> Dict Language Value
+toI18next definitions =
+    let
+        doubleGullWings =
+            String.replace "{" "{{" >> String.replace "}" "}}"
+
+        languageDicts =
+            List.foldl
+                (\def dict ->
+                    let
+                        translation : Dict Language (Dict String String)
+                        translation =
+                            case def.translation of
+                                Basic languages ->
+                                    Dict.map (\lang -> Dict.singleton def.name) languages
+
+                                Choice languages ->
+                                    Dict.map
+                                        (\lang ->
+                                            Dict.mapKeys
+                                                (\choiceKey ->
+                                                    if choiceKey == "singular" then
+                                                        def.name
+
+                                                    else
+                                                        def.name ++ "_" ++ choiceKey
+                                                )
+                                        )
+                                        languages
+
+                                Template _ languages ->
+                                    Dict.map (\lang body -> Dict.singleton def.name (doubleGullWings body.string)) languages
+
+                                TemplateChoice _ languages ->
+                                    Dict.map
+                                        (\lang ->
+                                            Dict.mapKeys
+                                                (\choiceKey ->
+                                                    if choiceKey == "singular" then
+                                                        def.name
+
+                                                    else
+                                                        def.name ++ "_" ++ choiceKey
+                                                )
+                                                >> Dict.map (\k body -> doubleGullWings body.string)
+                                        )
+                                        languages
+                    in
+                    Dict.merge
+                        Dict.insert
+                        (\key a b -> Dict.insert key (Dict.union a b))
+                        Dict.insert
+                        dict
+                        translation
+                        Dict.empty
+                )
+                Dict.empty
+                definitions
+    in
+    Dict.map
+        (\lang dict ->
+            dict |> Dict.toList |> List.map (Tuple.mapSecond Encode.string) |> Encode.object
+        )
+        languageDicts
+
+
+jsonToStrings : ModuleName -> Dict Language Value -> List ( Language, String )
+jsonToStrings moduleName =
+    Dict.toList >> List.map (\( lang, json ) -> ( jsonFileName lang moduleName, Encode.encode 2 json ))
+
+
+elmFileName : ModuleName -> String
+elmFileName =
     List.reverse
         >> List.head
-        >> Maybe.unwrap "Translations.elm"
-            (\name -> name ++ ".elm")
+        >> Maybe.withDefault "Translations"
+        >> (\n -> n ++ ".elm")
+
+
+jsonFileName : Language -> ModuleName -> String
+jsonFileName language =
+    List.reverse
+        >> List.head
+        >> Maybe.withDefault "i18n"
+        >> (\n -> n ++ "." ++ language ++ ".json")
+
+
+exampleCode =
+    """module Translations exposing (..)
+       
+
+welcome =
+   { dk = "Velkommen"
+   , en = "Welcome"
+   , sv = "Välkommen"
+   }
+
+
+apples =
+   { dk = { singular = "æble", plural = "æbler" }
+   , en = { singular = "apple", plural = "apples" }
+   , sv = { singular = "äpple", plural = "äpplen" }
+   }
+   
+
+hi name =
+   { dk = [ "Hej ", name, "!" ]
+   , en = [ "Hi ", name, "!" ]
+   , sv = [ "Hej ", name, "!" ]
+   }
+   
+   
+thereAreNCases n =
+   { sv = { singular = [ "Det finns ", n, " ärende" ], plural = [ "Det finns ", n, " ärenden" ] }
+   , dk = { singular = [], plural = [] }
+   , en = { singular = [ "There is ", n, " case" ], plural = [ "There are ", n, " cases" ] }
+   }
+
+"""
+
+
+
+{-
+
+   definitionsDecoder : Language -> Decoder (List Definition)
+   definitionsDecoder language =
+       let
+           findArgs str =
+               Regex.find (Regex.fromString "{.*?}" |> Maybe.withDefault Regex.never) str
+                   |> List.map .match
+                   |> List.unique
+                   |> List.map (String.dropLeft 1 >> String.dropRight 1)
+       in
+       Decode.keyValuePairs Decode.string
+           |> Decode.map
+               (List.sortBy Tuple.first
+                   >> List.groupWhile (\( a, _ ) ( b, _ ) -> String.startsWith (a ++ "_") b)
+                   >> List.map
+                       (\( head, tail ) ->
+                           let
+                               name =
+                                   Tuple.first head
+
+                               toDrop =
+                                   String.length name + 1
+
+                               choices =
+                                   head
+                                       :: tail
+                                       |> List.map
+                                           (\( choiceKey, string ) ->
+                                               ( if choiceKey == name then
+                                                   "singular"
+
+                                                 else
+                                                   String.dropLeft toDrop choiceKey
+                                               , string |> String.replace "{{" "{" |> String.replace "}}" "}"
+                                               )
+                                           )
+                           in
+                           { name = name
+                           , translation =
+                               case ( (choices |> List.map Tuple.second) |> String.join "" |> findArgs, choices ) of
+                                   ( [], [ single ] ) ->
+                                       Basic (Dict.singleton language (Tuple.second single))
+
+                                   ( [], many ) ->
+                                       Choice (Dict.singleton language (Dict.fromList many))
+
+                                   ( args, [ single ] ) ->
+                                       Template args (Dict.singleton language { expressions = Nothing, string = Tuple.second single })
+
+                                   ( args, many ) ->
+                                       TemplateChoice args
+                                           (Dict.singleton language
+                                               (many
+                                                   |> List.map (Tuple.mapSecond (\str -> { expressions = Nothing, string = str }))
+                                                   |> Dict.fromList
+                                               )
+                                           )
+                           , complete = False
+                           , invalidTemplate = True
+                           }
+                       )
+               )
+-}
