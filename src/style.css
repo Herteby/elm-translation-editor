@@ -241,18 +241,24 @@ footer .container {
     background: rgba(0, 0, 0, 0.3);
 }
 
-.preview {
-    width: 800px;
+.modal {
     padding: 20px;
     margin: 50px;
     flex-shrink: 1;
     overflow: auto;
     background: white;
-    font-family: monospace;
-    white-space: pre-wrap;
     border-radius: 5px;
     box-shadow: 0px 3px 8px rgba(0, 0, 0, 0.4);
     z-index: 1;
+}
+
+.modalButtons {
+    display: flex;
+    margin-top:20px;
+}
+.modalButtons > *{
+    margin:0 10px;
+    flex-grow: 1;
 }
 
 .error {

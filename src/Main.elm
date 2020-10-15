@@ -28,12 +28,6 @@ import Set
 import Task
 
 
-port confirmBack : () -> Cmd msg
-
-
-port confirmedBack : (() -> msg) -> Sub msg
-
-
 port copyToClipboard : String -> Cmd msg
 
 
@@ -76,12 +70,20 @@ thereAreNCases n =
 
 type Model
     = Start String
-    | Editor
-        { showPreview : Bool
-        , search : String
-        , moduleName : ModuleName
-        , definitions : List Definition
-        }
+    | Editor EditorModel
+
+
+type alias EditorModel =
+    { modal : Maybe Modal
+    , search : String
+    , moduleName : ModuleName
+    , definitions : List Definition
+    }
+
+
+type Modal
+    = Preview
+    | Confirm Msg String
 
 
 type Msg
@@ -91,13 +93,16 @@ type Msg
     | AddExampleCode
     | StartEdit ( List String, List Definition )
     | SetTranslation Int (Maybe ChoiceKey) Language String
-    | BackToStart
-    | ConfirmedBackToStart
-    | Download
-    | CopyFileToClipboard
+    | ClickedBack
+    | ConfirmedBack
+    | ClickedDownload
+    | ConfirmedDownloadIncomplete
+    | ClickedCopyFileToClipboard
+    | ConfirmedCopyFileToClipboardIncomplete
     | CopyToClipboard String
-    | TogglePreview
+    | ShowPreview
     | SetSearch String
+    | CloseModal
 
 
 main =
@@ -105,7 +110,7 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = always (confirmedBack (always ConfirmedBackToStart))
+        , subscriptions = always Sub.none
         }
 
 
@@ -133,7 +138,7 @@ update msg model =
 
         ( Start _, StartEdit ( moduleName, definitions ) ) ->
             ( Editor
-                { showPreview = False
+                { modal = Nothing
                 , search = ""
                 , moduleName = moduleName
                 , definitions = definitions
@@ -197,7 +202,10 @@ update msg model =
                             |> List.indexedMap
                                 (\i d ->
                                     if i == index then
-                                        { d | checked = translationIsValid d.translation }
+                                        { d
+                                            | checked = translationIsComplete d.translation
+                                            , invalidTemplate = invalidTemplate d.translation
+                                        }
 
                                     else
                                         d
@@ -206,26 +214,43 @@ update msg model =
             , Cmd.none
             )
 
-        ( Editor _, BackToStart ) ->
-            ( model, confirmBack () )
+        ( Editor em, ClickedBack ) ->
+            ( Editor { em | modal = Just (Confirm ConfirmedBack "Are you sure you want to go back? Your work will be lost.") }, Cmd.none )
 
-        ( Editor _, ConfirmedBackToStart ) ->
+        ( Editor _, ConfirmedBack ) ->
             ( Start "", Cmd.none )
 
-        ( Editor em, Download ) ->
+        ( Editor em, ClickedDownload ) ->
+            if List.all (.translation >> translationIsComplete) em.definitions then
+                ( model, Download.string (getFileName em.moduleName) "text/plain" (print em.moduleName em.definitions) )
+
+            else
+                ( Editor { em | modal = Just (Confirm ConfirmedDownloadIncomplete "Some of the translations are still blank. Are you sure you are done?") }, Cmd.none )
+
+        ( Editor em, ConfirmedDownloadIncomplete ) ->
             ( model, Download.string (getFileName em.moduleName) "text/plain" (print em.moduleName em.definitions) )
 
-        ( Editor em, CopyFileToClipboard ) ->
+        ( Editor em, ClickedCopyFileToClipboard ) ->
+            if List.all (.translation >> translationIsComplete) em.definitions then
+                ( model, print em.moduleName em.definitions |> copyToClipboard )
+
+            else
+                ( Editor { em | modal = Just (Confirm ConfirmedCopyFileToClipboardIncomplete "Some of the translations are still blank. Are you sure you are done?") }, Cmd.none )
+
+        ( Editor em, ConfirmedCopyFileToClipboardIncomplete ) ->
             ( model, print em.moduleName em.definitions |> copyToClipboard )
 
         ( Editor _, CopyToClipboard string ) ->
             ( model, copyToClipboard string )
 
-        ( Editor em, TogglePreview ) ->
-            ( Editor { em | showPreview = not em.showPreview }, Cmd.none )
+        ( Editor em, ShowPreview ) ->
+            ( Editor { em | modal = Just Preview }, Cmd.none )
 
         ( Editor em, SetSearch string ) ->
             ( Editor { em | search = string }, Cmd.none )
+
+        ( Editor em, CloseModal ) ->
+            ( Editor { em | modal = Nothing }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -282,11 +307,11 @@ view model =
                 Editor em ->
                     let
                         ifValid msg =
-                            if List.all .checked em.definitions then
-                                Just msg
+                            if List.any .invalidTemplate em.definitions then
+                                Nothing
 
                             else
-                                Nothing
+                                Just msg
                     in
                     [ editor
                         (if em.search == "" then
@@ -295,22 +320,39 @@ view model =
                          else
                             List.filter (matchDefiniton em.search) em.definitions
                         )
-                    , if em.showPreview then
-                        preview em.moduleName em.definitions
-
-                      else
-                        text ""
+                    , Maybe.unwrap (text "") (viewModal em) em.modal
                     , footer []
                         [ div [ class "container" ]
-                            [ button "Back to file import" (Just BackToStart)
+                            [ button "Back to file import" (Just ClickedBack)
                             , div [ class "footerButtons" ]
-                                [ secondary "Preview" (ifValid TogglePreview)
-                                , button "Download file" (ifValid Download)
-                                , button "Copy content to clipboard" (ifValid CopyFileToClipboard)
+                                [ secondary "Preview" (Just ShowPreview)
+                                , button "Download file" (ifValid ClickedDownload)
+                                , button "Copy content to clipboard" (ifValid ClickedCopyFileToClipboard)
                                 ]
                             ]
                         ]
                     ]
+        ]
+
+
+viewModal : EditorModel -> Modal -> Html Msg
+viewModal model m =
+    div [ class "ontop" ]
+        [ div [ class "overlay", onClick CloseModal ] []
+        , div [ class "modal" ]
+            [ case m of
+                Preview ->
+                    pre [] [ text (print model.moduleName model.definitions) ]
+
+                Confirm msg string ->
+                    div []
+                        [ text string
+                        , div [ class "modalButtons" ]
+                            [ button "Yes" (Just msg)
+                            , button "No" (Just CloseModal)
+                            ]
+                        ]
+            ]
         ]
 
 
@@ -373,20 +415,11 @@ secondary string maybeMsg =
 preview : ModuleName -> List Definition -> Html Msg
 preview moduleName definitions =
     div [ class "ontop" ]
-        [ div [ class "overlay", onClick TogglePreview ] []
+        [ div [ class "overlay", onClick ShowPreview ] []
         , div [ class "preview" ]
             [ text <| print moduleName definitions
             ]
         ]
-
-
-onClickIf : Bool -> msg -> Attribute msg
-onClickIf bool msg =
-    if bool then
-        onClick msg
-
-    else
-        class "disabled"
 
 
 editor : List Definition -> Html Msg
@@ -489,11 +522,30 @@ type alias Definition =
     { name : String
     , translation : Translation
     , checked : Bool
+    , invalidTemplate : Bool
     }
 
 
-translationIsValid : Translation -> Bool
-translationIsValid translation =
+invalidTemplate : Translation -> Bool
+invalidTemplate translation =
+    case translation of
+        Basic languages ->
+            False
+
+        Choice languages ->
+            False
+
+        Template args languages ->
+            Dict.values languages |> List.any (\{ string, expressions } -> expressions == Nothing && string /= "")
+
+        TemplateChoice args languages ->
+            Dict.values languages
+                |> List.concatMap Dict.values
+                |> List.any (\{ string, expressions } -> expressions == Nothing && string /= "")
+
+
+translationIsComplete : Translation -> Bool
+translationIsComplete translation =
     case translation of
         Basic languages ->
             Dict.values languages |> List.all ((/=) "")
@@ -588,7 +640,8 @@ fromAst (Node range d) =
                     (\translation ->
                         { name = Node.value declaration |> .name |> Node.value
                         , translation = translation
-                        , checked = Maybe.isJust documentation && translationIsValid translation
+                        , checked = Maybe.isJust documentation && translationIsComplete translation
+                        , invalidTemplate = invalidTemplate translation
                         }
                     )
 
