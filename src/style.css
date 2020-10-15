@@ -133,6 +133,23 @@ footer .container {
     justify-content: space-between;
 }
 
+.languageFilter {
+    display: flex;
+    align-items: center;
+}
+.languageFilter > div {
+    line-height: 1em;
+    background: var(--primary);
+    color:white;
+    border-radius: 5px;
+    padding: 10px;
+    margin-left: 10px;
+    cursor: pointer;
+}
+.languageFilter > div.disabled {
+    opacity: 0.5;
+}
+
 .card {
     display: flex;
     flex-direction: row;

@@ -24,7 +24,7 @@ import List.Extra as List
 import Maybe.Extra as Maybe
 import Regex exposing (Regex)
 import Result.Extra as Result
-import Set
+import Set exposing (Set)
 import Task
 
 
@@ -73,6 +73,7 @@ type Model
 type alias EditorModel =
     { modal : Maybe Modal
     , search : String
+    , languages : Dict Language Bool
     , moduleName : ModuleName
     , definitions : List Definition
     }
@@ -99,6 +100,7 @@ type Msg
     | CopyToClipboard String
     | ShowPreview
     | SetSearch String
+    | ToggleLanguage Language
     | CloseModal
 
 
@@ -137,6 +139,7 @@ update msg model =
             ( Editor
                 { modal = Nothing
                 , search = ""
+                , languages = getLanguages definitions
                 , moduleName = moduleName
                 , definitions = definitions
                 }
@@ -246,6 +249,9 @@ update msg model =
         ( Editor em, SetSearch string ) ->
             ( Editor { em | search = string }, Cmd.none )
 
+        ( Editor em, ToggleLanguage language ) ->
+            ( Editor { em | languages = Dict.update language (Maybe.map not) em.languages }, Cmd.none )
+
         ( Editor em, CloseModal ) ->
             ( Editor { em | modal = Nothing }, Cmd.none )
 
@@ -309,14 +315,19 @@ view model =
 
                             else
                                 Just msg
-                    in
-                    [ editor
-                        (if em.search == "" then
-                            em.definitions
 
-                         else
-                            List.filter (matchDefiniton em.search) em.definitions
-                        )
+                        shownLanguages =
+                            em.languages |> Dict.toList |> List.filter Tuple.second |> List.map Tuple.first |> Set.fromList
+
+                        definitions =
+                            if em.search == "" then
+                                em.definitions
+
+                            else
+                                List.filter (matchDefiniton em.search) em.definitions
+                    in
+                    [ languageFilter em.languages
+                    , editor shownLanguages definitions
                     , Maybe.unwrap (text "") (viewModal em) em.modal
                     , footer []
                         [ div [ class "container" ]
@@ -419,48 +430,68 @@ preview moduleName definitions =
         ]
 
 
-editor : List Definition -> Html Msg
-editor translations =
-    div [] <| List.indexedMap (Lazy.lazy2 editorCard) translations
+languageFilter : Dict Language Bool -> Html Msg
+languageFilter languages =
+    div [ class "languageFilter" ] <|
+        span [] [ text "Show languages:" ]
+            :: (languages
+                    |> Dict.toList
+                    |> List.map
+                        (\( language, enabled ) ->
+                            div
+                                [ classList [ ( "disabled", not enabled ) ]
+                                , onClick (ToggleLanguage language)
+                                ]
+                                [ text language ]
+                        )
+               )
 
 
-editorCard : Int -> Definition -> Html Msg
-editorCard index { name, translation, complete } =
+editor : Set Language -> List Definition -> Html Msg
+editor languages translations =
+    div [] <| List.indexedMap (Lazy.lazy3 editorCard languages) translations
+
+
+editorCard : Set Language -> Int -> Definition -> Html Msg
+editorCard shownLanguages index { name, translation, complete } =
+    let
+        filterAndMap : Dict Language v -> (( Language, v ) -> b) -> List b
+        filterAndMap languages f =
+            Dict.filter (\k _ -> Set.member k shownLanguages) languages
+                |> Dict.toList
+                |> List.map f
+    in
     div [ class "card" ] <|
         div []
             [ text name ]
             :: (case translation of
                     Basic languages ->
-                        List.map
+                        filterAndMap languages
                             (\( language, string ) ->
                                 textInput language string False (SetTranslation index Nothing)
                             )
-                            (Dict.toList languages)
 
                     Choice languages ->
-                        List.map
+                        filterAndMap languages
                             (\( language, choices ) ->
                                 choiceInput language (Dict.map (\_ c -> ( c, False )) choices) (SetTranslation index)
                             )
-                            (Dict.toList languages)
 
                     Template placeholders languages ->
                         viewPlaceholders placeholders
-                            :: List.map
+                            :: filterAndMap languages
                                 (\( language, { string, expressions } ) ->
                                     textInput language string (expressions == Nothing) (SetTranslation index Nothing)
                                 )
-                                (Dict.toList languages)
 
                     TemplateChoice placeholders languages ->
                         viewPlaceholders placeholders
-                            :: List.map
+                            :: filterAndMap languages
                                 (\( language, choices ) ->
                                     choiceInput language
                                         (Dict.map (\_ { string, expressions } -> ( string, expressions == Nothing )) choices)
                                         (SetTranslation index)
                                 )
-                                (Dict.toList languages)
                )
 
 
@@ -555,6 +586,30 @@ translationIsComplete translation =
 
         TemplateChoice args languages ->
             Dict.values languages |> List.concatMap Dict.values |> List.all (\{ string, expressions } -> expressions /= Nothing && string /= "")
+
+
+getLanguages : List Definition -> Dict Language Bool
+getLanguages =
+    List.foldl
+        (\def ->
+            let
+                languages =
+                    case def.translation of
+                        Basic dict ->
+                            Dict.map (\_ _ -> True) dict
+
+                        Choice dict ->
+                            Dict.map (\_ _ -> True) dict
+
+                        Template _ dict ->
+                            Dict.map (\_ _ -> True) dict
+
+                        TemplateChoice _ dict ->
+                            Dict.map (\_ _ -> True) dict
+            in
+            Dict.union languages
+        )
+        Dict.empty
 
 
 type Translation
