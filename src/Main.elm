@@ -34,14 +34,13 @@ port copyToClipboard : String -> Cmd msg
 exampleCode =
     """module Translations exposing (..)
        
-{-| -}
+
 welcome =
    { dk = "Velkommen"
    , en = "Welcome"
    , sv = "Välkommen"
    }
-   
-   
+
 
 apples =
    { dk = { singular = "æble", plural = "æbler" }
@@ -50,15 +49,13 @@ apples =
    }
    
 
-{-| -}
 hi name =
    { dk = [ "Hej ", name, "!" ]
    , en = [ "Hi ", name, "!" ]
    , sv = [ "Hej ", name, "!" ]
    }
    
-
-{-| -}
+   
 thereAreNCases n =
    { sv = { singular = [ "Det finns ", n, " ärende" ], plural = [ "Det finns ", n, " ärenden" ] }
    , dk = { singular = [], plural = [] }
@@ -203,7 +200,7 @@ update msg model =
                                 (\i d ->
                                     if i == index then
                                         { d
-                                            | checked = translationIsComplete d.translation
+                                            | complete = translationIsComplete d.translation
                                             , invalidTemplate = invalidTemplate d.translation
                                         }
 
@@ -428,8 +425,8 @@ editor translations =
 
 
 editorCard : Int -> Definition -> Html Msg
-editorCard index { name, translation, checked } =
-    div [ classList [ ( "card", True ), ( "todo", not checked ) ] ] <|
+editorCard index { name, translation, complete } =
+    div [ class "card" ] <|
         div []
             [ text name ]
             :: (case translation of
@@ -521,7 +518,7 @@ autoExpand string invalid msg =
 type alias Definition =
     { name : String
     , translation : Translation
-    , checked : Bool
+    , complete : Bool
     , invalidTemplate : Bool
     }
 
@@ -613,7 +610,7 @@ translationsFromCode str =
                                 |> Result.map
                                     (List.sortBy
                                         (\d ->
-                                            if d.checked then
+                                            if d.complete then
                                                 1
 
                                             else
@@ -640,7 +637,7 @@ fromAst (Node range d) =
                     (\translation ->
                         { name = Node.value declaration |> .name |> Node.value
                         , translation = translation
-                        , checked = Maybe.isJust documentation && translationIsComplete translation
+                        , complete = translationIsComplete translation
                         , invalidTemplate = invalidTemplate translation
                         }
                     )
@@ -873,19 +870,10 @@ print moduleName definitions =
 
 
 toDeclaration : Definition -> CodeGen.Declaration
-toDeclaration { name, translation, checked } =
-    let
-        comment =
-            if checked then
-                CodeGen.emptyDocComment
-                    |> Just
-
-            else
-                Nothing
-    in
+toDeclaration { name, translation, complete } =
     case translation of
         Basic languages ->
-            CodeGen.valDecl comment
+            CodeGen.valDecl Nothing
                 Nothing
                 name
                 (CodeGen.record
@@ -899,7 +887,7 @@ toDeclaration { name, translation, checked } =
                 )
 
         Template args languages ->
-            CodeGen.funDecl comment
+            CodeGen.funDecl Nothing
                 Nothing
                 name
                 (List.map CodeGen.varPattern args)
@@ -916,7 +904,7 @@ toDeclaration { name, translation, checked } =
                 )
 
         Choice languages ->
-            CodeGen.valDecl comment
+            CodeGen.valDecl Nothing
                 Nothing
                 name
                 (languages
@@ -934,7 +922,7 @@ toDeclaration { name, translation, checked } =
                 )
 
         TemplateChoice args languages ->
-            CodeGen.funDecl comment
+            CodeGen.funDecl Nothing
                 Nothing
                 name
                 (List.map CodeGen.varPattern args)
