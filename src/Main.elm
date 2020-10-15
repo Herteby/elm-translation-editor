@@ -262,24 +262,7 @@ update msg model =
 view : Model -> Html Msg
 view model =
     div [ class "app" ]
-        [ header []
-            [ div [ class "container" ]
-                [ div [] [ text "Elm Translation Editor" ]
-                , case model of
-                    Editor em ->
-                        div [ class "search" ]
-                            [ input
-                                [ value em.search
-                                , onInput SetSearch
-                                , placeholder "Search translations"
-                                ]
-                                []
-                            ]
-
-                    Start _ ->
-                        text ""
-                ]
-            ]
+        [ header [] [ div [ class "container" ] [ text "Elm Translation Editor" ] ]
         , main_ [] <|
             case model of
                 Start code ->
@@ -326,7 +309,15 @@ view model =
                             else
                                 List.filter (matchDefiniton em.search) em.definitions
                     in
-                    [ languageFilter em.languages
+                    [ div [ class "toolbar" ]
+                        [ languageFilter em.languages
+                        , input
+                            [ value em.search
+                            , onInput SetSearch
+                            , placeholder "Search translations"
+                            ]
+                            []
+                        ]
                     , editor shownLanguages definitions
                     , Maybe.unwrap (text "") (viewModal em) em.modal
                     , footer []
