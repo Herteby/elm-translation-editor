@@ -34,7 +34,7 @@ port copyToClipboard : String -> Cmd msg
 
 
 type Model
-    = Start String
+    = Start String (Maybe { name : String, languages : String })
     | Editor EditorModel
 
 
@@ -56,6 +56,22 @@ type Output
 type Modal
     = Preview
     | Confirm Msg String
+    | New NewDefinition
+
+
+type alias NewDefinition =
+    { name : String
+    , arguments : String
+    , choices : String
+    }
+
+
+type alias Definition =
+    { name : String
+    , translation : Translation
+    , complete : Bool
+    , invalidTemplate : Bool
+    }
 
 
 type Translation
@@ -86,6 +102,11 @@ type alias ChoiceKey =
 type Msg
     = SetCode String
     | SelectFile
+    | OpenNewFile
+    | CancelNewFile
+    | NewFileName String
+    | NewFileLanguages String
+    | SaveNewFile
     | GotFile File
     | AddExampleCode
     | StartEdit ( List String, List Definition )
@@ -101,6 +122,11 @@ type Msg
     | SetSearch String
     | ToggleLanguage Language
     | ToggleOutput
+    | OpenNewDefinition
+    | NewDefinitionName String
+    | NewDefinitionArguments String
+    | NewDefinitionChoices String
+    | SaveNewDefinition Definition
     | CloseModal
 
 
@@ -115,7 +141,7 @@ main =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Start ""
+    ( Start "" Nothing
     , Cmd.none
     )
 
@@ -123,19 +149,34 @@ init _ =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case ( model, msg ) of
-        ( Start _, SelectFile ) ->
+        ( Start _ _, SelectFile ) ->
             ( model, File.Select.file [] GotFile )
 
-        ( Start _, GotFile file ) ->
+        ( Start _ _, GotFile file ) ->
             ( model, Task.perform SetCode (File.toString file) )
 
-        ( Start _, SetCode str ) ->
-            ( Start str, Cmd.none )
+        ( Start code m, OpenNewFile ) ->
+            ( Start code (Just { name = "", languages = "" }), Cmd.none )
 
-        ( Start _, AddExampleCode ) ->
-            ( Start exampleCode, Cmd.none )
+        ( Start code m, CancelNewFile ) ->
+            ( Start code Nothing, Cmd.none )
 
-        ( Start _, StartEdit ( moduleName, definitions ) ) ->
+        ( Start code newFile, NewFileName string ) ->
+            ( Start code (Maybe.map (\n -> { n | name = string }) newFile), Cmd.none )
+
+        ( Start code newFile, NewFileLanguages string ) ->
+            ( Start code (Maybe.map (\n -> { n | languages = string }) newFile), Cmd.none )
+
+        ( Start code _, SaveNewFile ) ->
+            ( Start code Nothing, Cmd.none )
+
+        ( Start _ m, SetCode str ) ->
+            ( Start str m, Cmd.none )
+
+        ( Start _ m, AddExampleCode ) ->
+            ( Start exampleCode m, Cmd.none )
+
+        ( Start _ _, StartEdit ( moduleName, definitions ) ) ->
             ( Editor
                 { modal = Nothing
                 , search = ""
@@ -219,7 +260,7 @@ update msg model =
             ( Editor { em | modal = Just (Confirm ConfirmedBack "Are you sure you want to go back? Your work will be lost.") }, Cmd.none )
 
         ( Editor _, ConfirmedBack ) ->
-            ( Start "", Cmd.none )
+            ( Start "" Nothing, Cmd.none )
 
         ( Editor em, ClickedDownload ) ->
             if List.all (.translation >> translationIsComplete) em.definitions then
@@ -267,11 +308,36 @@ update msg model =
             , Cmd.none
             )
 
+        ( Editor em, OpenNewDefinition ) ->
+            ( Editor { em | modal = Just (New <| NewDefinition "" "" "") }, Cmd.none )
+
+        ( Editor em, NewDefinitionName string ) ->
+            updateNewDefinition em (\n -> { n | name = string })
+
+        ( Editor em, NewDefinitionArguments string ) ->
+            updateNewDefinition em (\n -> { n | arguments = string })
+
+        ( Editor em, NewDefinitionChoices string ) ->
+            updateNewDefinition em (\n -> { n | choices = string })
+
+        ( Editor em, SaveNewDefinition definition ) ->
+            ( Editor { em | modal = Nothing, definitions = definition :: em.definitions }, Cmd.none )
+
         ( Editor em, CloseModal ) ->
             ( Editor { em | modal = Nothing }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
+
+
+updateNewDefinition : EditorModel -> (NewDefinition -> NewDefinition) -> ( Model, Cmd Msg )
+updateNewDefinition em fn =
+    case em.modal of
+        Just (New newDefinition) ->
+            ( Editor { em | modal = Just (New (fn newDefinition)) }, Cmd.none )
+
+        _ ->
+            ( Editor em, Cmd.none )
 
 
 download : EditorModel -> Cmd msg
@@ -301,9 +367,12 @@ view model =
         [ header [] [ div [ class "container" ] [ text "Elm Translation Editor" ] ]
         , main_ [] <|
             case model of
-                Start code ->
-                    [ div [ class "toolbar" ]
+                Start code newFile ->
+                    [ Maybe.unwrap (text "") newFileModal newFile
+                    , div [ class "toolbar" ]
                         [ button "Upload a translation file" (Just SelectFile)
+
+                        {- , secondary "Create a new file" (Just OpenNewFile) -}
                         , secondary "click here to insert example code" (Just AddExampleCode)
                         ]
                     , textarea
@@ -335,9 +404,6 @@ view model =
                             else
                                 Just msg
 
-                        shownLanguages =
-                            em.languages |> Dict.toList |> List.filter Tuple.second |> List.map Tuple.first |> Set.fromList
-
                         definitions =
                             if em.search == "" then
                                 em.definitions
@@ -346,7 +412,8 @@ view model =
                                 List.filter (matchDefiniton em.search) em.definitions
                     in
                     [ div [ class "toolbar" ]
-                        [ languageFilter em.languages
+                        [ button "+ New Definition" (Just OpenNewDefinition)
+                        , languageFilter em.languages
                         , input
                             [ value em.search
                             , onInput SetSearch
@@ -354,8 +421,8 @@ view model =
                             ]
                             []
                         ]
-                    , editor shownLanguages definitions
-                    , Maybe.unwrap (text "") (viewModal em) em.modal
+                    , Lazy.lazy2 editor em.languages definitions
+                    , Maybe.unwrap (text "") (editorModals em) em.modal
                     , footer []
                         [ div [ class "container" ]
                             [ button "Back to file import" (Just ClickedBack)
@@ -379,40 +446,185 @@ view model =
         ]
 
 
-viewModal : EditorModel -> Modal -> Html Msg
-viewModal em m =
+modal : msg -> Html msg -> Html msg
+modal close content =
     div [ class "ontop" ]
-        [ div [ class "overlay", onClick CloseModal ] []
+        [ div [ class "overlay", onClick close ] []
         , div [ class "modal" ]
-            [ case m of
-                Preview ->
-                    case em.output of
-                        Elm ->
-                            div []
-                                [ h1 [] [ text <| elmFileName em.moduleName ]
-                                , pre [] [ text <| print em.moduleName em.definitions ]
-                                ]
-
-                        I18next ->
-                            em.definitions
-                                |> toI18next
-                                |> jsonToStrings em.moduleName
-                                |> List.concatMap
-                                    (\( lang, json ) ->
-                                        [ h1 [] [ text lang ], pre [] [ text json ] ]
-                                    )
-                                |> div []
-
-                Confirm msg string ->
-                    div []
-                        [ text string
-                        , div [ class "modalButtons" ]
-                            [ button "Yes" (Just msg)
-                            , button "No" (Just CloseModal)
-                            ]
-                        ]
-            ]
+            [ content ]
         ]
+
+
+newFileModal newFile =
+    modal CancelNewFile <|
+        div [ class "newFile" ]
+            [ h3 [] [ text "New file" ]
+
+            {- , label [ invalid .name ]
+                   [ span [] [ text "Name" ]
+                   , input [ value def.name, onInput NewDefinitionName ] []
+                   ]
+               , label [ invalid .name ]
+                   [ span [] [ text "Languages" ]
+                   , input [ value def.name, onInput NewDefinitionName ] []
+                   ]
+            -}
+            ]
+
+
+editorModals : EditorModel -> Modal -> Html Msg
+editorModals em m =
+    modal CloseModal <|
+        case m of
+            Preview ->
+                case em.output of
+                    Elm ->
+                        div []
+                            [ h1 [] [ text <| elmFileName em.moduleName ]
+                            , pre [] [ text <| print em.moduleName em.definitions ]
+                            ]
+
+                    I18next ->
+                        em.definitions
+                            |> toI18next
+                            |> jsonToStrings em.moduleName
+                            |> List.concatMap
+                                (\( lang, json ) ->
+                                    [ h1 [] [ text lang ], pre [] [ text json ] ]
+                                )
+                            |> div []
+
+            Confirm msg string ->
+                div []
+                    [ text string
+                    , div [ class "modalButtons" ]
+                        [ button "Yes" (Just msg)
+                        , button "No" (Just CloseModal)
+                        ]
+                    ]
+
+            New def ->
+                let
+                    names =
+                        List.map (.name >> String.toLower) em.definitions
+
+                    newDef =
+                        createDefinition names em.languages def
+
+                    invalid getter =
+                        case newDef of
+                            Ok _ ->
+                                class ""
+
+                            Err err ->
+                                if Maybe.isJust (getter err) then
+                                    class "invalid"
+
+                                else
+                                    class ""
+                in
+                div [ class "newDef" ]
+                    [ h3 [] [ text "New definition" ]
+                    , label [ invalid .name ]
+                        [ span [] [ text "Name" ]
+                        , input [ value def.name, onInput NewDefinitionName ] []
+                        ]
+                    , label [ invalid .arguments ]
+                        [ span [] [ text "Variables" ]
+                        , input [ value def.arguments, onInput NewDefinitionArguments ] []
+                        ]
+                    , label [ invalid .choices ]
+                        [ span [] [ text "Choices" ]
+                        , input [ value def.choices, onInput NewDefinitionChoices ] []
+                        ]
+                    , h3 [ class "previewHeader" ] [ text "Preview" ]
+                    , div [ class "previewNewDef" ]
+                        [ case newDef of
+                            Ok nd ->
+                                editorCard em.languages 0 nd
+
+                            Err err ->
+                                text
+                                    (Maybe.values [ err.name, err.arguments, err.choices ]
+                                        |> List.head
+                                        |> Maybe.withDefault "Something went wrong"
+                                    )
+                        ]
+                    , div [ class "modalButtons" ]
+                        [ button "Save" (newDef |> Result.toMaybe |> Maybe.map SaveNewDefinition)
+                        , button "Cancel" (Just CloseModal)
+                        ]
+                    ]
+
+
+createDefinition : List String -> Dict Language Bool -> NewDefinition -> Result { name : Maybe String, arguments : Maybe String, choices : Maybe String } Definition
+createDefinition names languages def =
+    let
+        invalidChar =
+            Regex.contains (Regex.fromString "[^a-zA-Z_]" |> Maybe.withDefault Regex.never)
+
+        split str =
+            String.split "," str
+                |> List.concatMap (String.split " ")
+                |> List.filter ((/=) "")
+
+        choices =
+            split def.choices
+
+        arguments =
+            split def.arguments
+
+        errors =
+            hasErrors
+                { name =
+                    [ ( def.name == "", "Name required" )
+                    , ( invalidChar def.name, "Name contains an invalid character" )
+                    , ( List.member (String.toLower def.name) names, "A definition with that name already exists" )
+                    ]
+                , arguments =
+                    [ ( List.any invalidChar arguments, "An argument contains an invalid character" )
+                    , ( List.length arguments /= List.length (List.unique arguments), "Variable names must be unique" )
+                    ]
+                , choices =
+                    [ ( List.any invalidChar arguments, "A choice contains an invalid character" )
+                    , ( List.length choices == 1, "Definition must have zero, two, or more choices" )
+                    , ( List.length choices /= List.length (List.unique choices), "Definition must not contain duplicate choices" )
+                    ]
+                }
+    in
+    if List.any Maybe.isJust [ errors.name, errors.arguments, errors.choices ] then
+        Err errors
+
+    else
+        Ok
+            { name = def.name
+            , complete = False
+            , invalidTemplate = False
+            , translation =
+                case ( split def.arguments, choices ) of
+                    ( [], [] ) ->
+                        Basic (Dict.map (\_ _ -> "") languages)
+
+                    ( [], _ ) ->
+                        Choice (languages |> Dict.map (\_ _ -> choices |> List.map (\key -> ( key, "" )) |> Dict.fromList))
+
+                    ( _, [] ) ->
+                        Template arguments (Dict.map (\_ _ -> { expressions = Nothing, string = "" }) languages)
+
+                    ( _, _ ) ->
+                        TemplateChoice arguments (languages |> Dict.map (\_ _ -> choices |> List.map (\key -> ( key, { expressions = Nothing, string = "" } )) |> Dict.fromList))
+            }
+
+
+hasErrors errors =
+    let
+        first =
+            List.filter Tuple.first >> List.map Tuple.second >> List.head
+    in
+    { name = first errors.name
+    , arguments = first errors.arguments
+    , choices = first errors.choices
+    }
 
 
 matchDefiniton : String -> Definition -> Bool
@@ -471,16 +683,6 @@ secondary string maybeMsg =
         [ text string ]
 
 
-preview : ModuleName -> List Definition -> Html Msg
-preview moduleName definitions =
-    div [ class "ontop" ]
-        [ div [ class "overlay", onClick ShowPreview ] []
-        , div [ class "preview" ]
-            [ text <| print moduleName definitions
-            ]
-        ]
-
-
 languageFilter : Dict Language Bool -> Html Msg
 languageFilter languages =
     div [ class "languageFilter" ] <|
@@ -498,14 +700,21 @@ languageFilter languages =
                )
 
 
-editor : Set Language -> List Definition -> Html Msg
+editor : Dict Language Bool -> List Definition -> Html Msg
 editor languages translations =
-    div [] <| List.indexedMap (Lazy.lazy3 editorCard languages) translations
+    div [] <| List.indexedMap (\i def -> Lazy.lazy3 editorCard languages i def) translations
 
 
-editorCard : Set Language -> Int -> Definition -> Html Msg
-editorCard shownLanguages index { name, translation, complete } =
+editorCard : Dict Language Bool -> Int -> Definition -> Html Msg
+editorCard langs index { name, translation, complete } =
     let
+        shownLanguages =
+            langs
+                |> Dict.toList
+                |> List.filter Tuple.second
+                |> List.map Tuple.first
+                |> Set.fromList
+
         filterAndMap : Dict Language v -> (( Language, v ) -> b) -> List b
         filterAndMap languages f =
             Dict.filter (\k _ -> Set.member k shownLanguages) languages
@@ -595,14 +804,6 @@ autoExpand string invalid msg =
         [ textarea [ onInput msg, value string ] []
         , div [] [ text (string ++ "_") ]
         ]
-
-
-type alias Definition =
-    { name : String
-    , translation : Translation
-    , complete : Bool
-    , invalidTemplate : Bool
-    }
 
 
 invalidTemplate : Translation -> Bool

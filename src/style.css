@@ -28,8 +28,9 @@ main > * {
     margin-top: 10px;
 }
 
-h1 {
+h1,h2,h3,h4,h5,h6 {
     font-weight: normal;
+    color: #aaaaaa;
     margin: 0;
 }
 
@@ -90,6 +91,12 @@ label > span {
     background: var(--primary);
     color: white;
     padding: 0 10px;
+}
+
+label > input {
+    box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.2);
+    flex-grow: 1;
+    border-radius: 0;
 }
 
 label.invalid > span, span.invalid {
@@ -227,7 +234,7 @@ footer .container {
     word-break: break-all;
 }
 
-.autoexpand.invalid textarea {
+.autoexpand.invalid textarea, label.invalid input {
     background: #fdd;
 }
 
@@ -276,4 +283,23 @@ footer .container {
 
 .error {
     color: var(--invalid)
+}
+.newDef{
+    display: flex;
+    flex-direction: column;
+}
+.newDef > label > span {
+    width: 70px;
+}
+.previewHeader{
+    margin-top:20px;
+    margin-bottom:10px;
+}
+.previewNewDef{
+    pointer-events: none;
+    background: #eeeeee;
+    padding:10px;
+    border-radius: 5px;
+    box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.2);
+    
 }
