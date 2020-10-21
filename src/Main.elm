@@ -533,6 +533,7 @@ createFile name languages =
                 first
                     [ ( langs == [], "At least one language required" )
                     , ( List.any invalidChar langs, "A language code contains an invalid character" )
+                    , ( List.any containsUppercase langs, "Language codes must be lowercase" )
                     ]
             }
     in
@@ -648,14 +649,16 @@ createDefinition names languages def =
                     ]
             , arguments =
                 first
-                    [ ( List.any invalidChar arguments, "An argument contains an invalid character" )
+                    [ ( List.any invalidChar arguments, "A variable name contains an invalid character" )
                     , ( List.length arguments /= List.length (List.unique arguments), "Variable names must be unique" )
+                    , ( List.any containsUppercase arguments, "Variable names must be lowercase" )
                     ]
             , choices =
                 first
                     [ ( List.any invalidChar arguments, "A choice contains an invalid character" )
                     , ( List.length choices == 1, "Definition must have zero, two, or more choices" )
                     , ( List.length choices /= List.length (List.unique choices), "Definition must not contain duplicate choices" )
+                    , ( List.any containsUppercase arguments, "Choices must be lowercase" )
                     ]
             }
     in
@@ -681,6 +684,11 @@ createDefinition names languages def =
                     ( _, _ ) ->
                         TemplateChoice arguments (languages |> Dict.map (\_ _ -> choices |> List.map (\key -> ( key, { expressions = Nothing, string = "" } )) |> Dict.fromList))
             }
+
+
+containsUppercase : String -> Bool
+containsUppercase =
+    String.toList >> List.any Char.isUpper
 
 
 invalidChar : String -> Bool
