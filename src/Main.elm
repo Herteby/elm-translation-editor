@@ -17,7 +17,7 @@ import File exposing (File)
 import File.Download as Download
 import File.Select
 import Html exposing (..)
-import Html.Attributes exposing (autofocus, class, classList, disabled, placeholder, style, title, value)
+import Html.Attributes exposing (attribute, autofocus, class, classList, disabled, placeholder, style, title, value)
 import Html.Events exposing (onClick, onInput)
 import Html.Lazy as Lazy
 import Json.Decode as Decode exposing (Decoder)
@@ -106,9 +106,10 @@ type Msg
     | CancelNewFile
     | NewFileName String
     | NewFileLanguages String
-    | SaveNewFile
+    | SaveNewFile { languages : Dict String Bool, moduleName : ModuleName }
     | GotFile File
     | AddExampleCode
+      ------- Editor -------
     | StartEdit ( List String, List Definition )
     | SetTranslation Int (Maybe ChoiceKey) Language String
     | ClickedBack
@@ -167,7 +168,19 @@ update msg model =
         ( Start code newFile, NewFileLanguages string ) ->
             ( Start code (Maybe.map (\n -> { n | languages = string }) newFile), Cmd.none )
 
-        ( Start code _, SaveNewFile ) ->
+        ( Start _ _, SaveNewFile file ) ->
+            ( Editor
+                { modal = Nothing
+                , search = ""
+                , languages = file.languages
+                , moduleName = file.moduleName
+                , definitions = []
+                , output = Elm
+                }
+            , Cmd.none
+            )
+
+        ( Start code _, CloseModal ) ->
             ( Start code Nothing, Cmd.none )
 
         ( Start _ m, SetCode str ) ->
@@ -188,6 +201,7 @@ update msg model =
             , Cmd.none
             )
 
+        ------- Editor -------
         ( Editor em, SetTranslation index choiceKey language string ) ->
             ( Editor
                 { em
@@ -369,10 +383,11 @@ view model =
             case model of
                 Start code newFile ->
                     [ Maybe.unwrap (text "") newFileModal newFile
-                    , div [ class "toolbar" ]
+                    , row 10
+                        []
                         [ button "Upload a translation file" (Just SelectFile)
-
-                        {- , secondary "Create a new file" (Just OpenNewFile) -}
+                        , secondary "Create a new file" (Just OpenNewFile)
+                        , spacer
                         , secondary "click here to insert example code" (Just AddExampleCode)
                         ]
                     , textarea
@@ -411,9 +426,11 @@ view model =
                             else
                                 List.filter (matchDefiniton em.search) em.definitions
                     in
-                    [ div [ class "toolbar" ]
+                    [ row 10
+                        []
                         [ button "+ New Definition" (Just OpenNewDefinition)
                         , languageFilter em.languages
+                        , spacer
                         , input
                             [ value em.search
                             , onInput SetSearch
@@ -455,21 +472,78 @@ modal close content =
         ]
 
 
+newFileModal : { name : String, languages : String } -> Html Msg
 newFileModal newFile =
+    let
+        file =
+            createFile newFile.name newFile.languages
+
+        invalid getter =
+            case file of
+                Ok _ ->
+                    class ""
+
+                Err err ->
+                    if Maybe.isJust (getter err) then
+                        class "invalid"
+
+                    else
+                        class ""
+    in
     modal CancelNewFile <|
         div [ class "newFile" ]
             [ h3 [] [ text "New file" ]
-
-            {- , label [ invalid .name ]
-                   [ span [] [ text "Name" ]
-                   , input [ value def.name, onInput NewDefinitionName ] []
-                   ]
-               , label [ invalid .name ]
-                   [ span [] [ text "Languages" ]
-                   , input [ value def.name, onInput NewDefinitionName ] []
-                   ]
-            -}
+            , label [ invalid .name ]
+                [ span [] [ text "Name" ]
+                , input [ value newFile.name, onInput NewFileName ] []
+                ]
+            , showError .name file
+            , label [ invalid .languages ]
+                [ span [] [ text "Language codes" ]
+                , input [ value newFile.languages, onInput NewFileLanguages ] []
+                ]
+            , div [] [ text "(Separated by spaces)" ]
+            , showError .languages file
+            , div [ class "modalButtons" ]
+                [ button "Save" (file |> Result.toMaybe |> Maybe.map SaveNewFile)
+                , button "Cancel" (Just CloseModal)
+                ]
             ]
+
+
+createFile : String -> String -> Result { name : Maybe String, languages : Maybe String } { languages : Dict Language Bool, moduleName : ModuleName }
+createFile name languages =
+    let
+        langs =
+            split languages
+
+        errors =
+            { name =
+                first
+                    [ ( name == "", "Name required" )
+                    , ( invalidChar name, "Name contains an invalid character" )
+                    , ( name
+                            |> String.toList
+                            |> List.head
+                            |> Maybe.unwrap False Char.isLower
+                      , "The first letter must be uppercase"
+                      )
+                    ]
+            , languages =
+                first
+                    [ ( langs == [], "At least one language required" )
+                    , ( List.any invalidChar langs, "A language code contains an invalid character" )
+                    ]
+            }
+    in
+    if List.any Maybe.isJust [ errors.name, errors.languages ] then
+        Err errors
+
+    else
+        Ok
+            { languages = langs |> List.map (\l -> ( l, True )) |> Dict.fromList
+            , moduleName = [ name ]
+            }
 
 
 editorModals : EditorModel -> Modal -> Html Msg
@@ -544,11 +618,10 @@ editorModals em m =
                                 editorCard em.languages 0 nd
 
                             Err err ->
-                                text
-                                    (Maybe.values [ err.name, err.arguments, err.choices ]
-                                        |> List.head
-                                        |> Maybe.withDefault "Something went wrong"
-                                    )
+                                Maybe.values [ err.name, err.arguments, err.choices ]
+                                    |> List.head
+                                    |> Maybe.withDefault "Something went wrong"
+                                    |> text
                         ]
                     , div [ class "modalButtons" ]
                         [ button "Save" (newDef |> Result.toMaybe |> Maybe.map SaveNewDefinition)
@@ -560,14 +633,6 @@ editorModals em m =
 createDefinition : List String -> Dict Language Bool -> NewDefinition -> Result { name : Maybe String, arguments : Maybe String, choices : Maybe String } Definition
 createDefinition names languages def =
     let
-        invalidChar =
-            Regex.contains (Regex.fromString "[^a-zA-Z_]" |> Maybe.withDefault Regex.never)
-
-        split str =
-            String.split "," str
-                |> List.concatMap (String.split " ")
-                |> List.filter ((/=) "")
-
         choices =
             split def.choices
 
@@ -575,22 +640,24 @@ createDefinition names languages def =
             split def.arguments
 
         errors =
-            hasErrors
-                { name =
+            { name =
+                first
                     [ ( def.name == "", "Name required" )
                     , ( invalidChar def.name, "Name contains an invalid character" )
                     , ( List.member (String.toLower def.name) names, "A definition with that name already exists" )
                     ]
-                , arguments =
+            , arguments =
+                first
                     [ ( List.any invalidChar arguments, "An argument contains an invalid character" )
                     , ( List.length arguments /= List.length (List.unique arguments), "Variable names must be unique" )
                     ]
-                , choices =
+            , choices =
+                first
                     [ ( List.any invalidChar arguments, "A choice contains an invalid character" )
                     , ( List.length choices == 1, "Definition must have zero, two, or more choices" )
                     , ( List.length choices /= List.length (List.unique choices), "Definition must not contain duplicate choices" )
                     ]
-                }
+            }
     in
     if List.any Maybe.isJust [ errors.name, errors.arguments, errors.choices ] then
         Err errors
@@ -616,15 +683,26 @@ createDefinition names languages def =
             }
 
 
-hasErrors errors =
-    let
-        first =
-            List.filter Tuple.first >> List.map Tuple.second >> List.head
-    in
-    { name = first errors.name
-    , arguments = first errors.arguments
-    , choices = first errors.choices
-    }
+invalidChar : String -> Bool
+invalidChar =
+    Regex.contains (Regex.fromString "[^a-zA-Z_]" |> Maybe.withDefault Regex.never)
+
+
+showError : (a -> Maybe String) -> Result a b -> Html msg
+showError getter =
+    Result.error >> Maybe.andThen getter >> Maybe.withDefault "" >> text
+
+
+split : String -> List String
+split str =
+    String.split "," str
+        |> List.concatMap (String.split " ")
+        |> List.filter ((/=) "")
+
+
+first : List ( Bool, a ) -> Maybe a
+first =
+    List.filter Tuple.first >> List.map Tuple.second >> List.head
 
 
 matchDefiniton : String -> Definition -> Bool
@@ -1427,3 +1505,18 @@ thereAreNCases n =
                        )
                )
 -}
+
+
+row : Int -> List (Attribute msg) -> List (Html msg) -> Html msg
+row spacing attrs children =
+    div ([ class "row", attribute "style" ("--spacing:" ++ String.fromInt spacing ++ "px") ] ++ attrs) children
+
+
+col : Int -> List (Attribute msg) -> List (Html msg) -> Html msg
+col spacing attrs children =
+    div ([ class "row", attribute "style" ("--spacing:" ++ String.fromInt spacing ++ "px") ] ++ attrs) children
+
+
+spacer : Html msg
+spacer =
+    div [ class "spacer" ] []
