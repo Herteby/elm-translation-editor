@@ -465,7 +465,7 @@ view model =
 
 modal : msg -> Html msg -> Html msg
 modal close content =
-    div [ class "ontop" ]
+    div [ class "modalContainer" ]
         [ div [ class "overlay", onClick close ] []
         , div [ class "modal" ]
             [ content ]
@@ -990,16 +990,12 @@ translationsFromCode str =
                     in
                     Result.map2 Tuple.pair moduleDef definitions
                 )
-
-
-
-{- |> Result.orElseLazy
-   (\() ->
-       Decode.decodeString (definitionsDecoder "foolang") str
-           |> Result.map (Tuple.pair [ "foobar" ])
-           |> Result.mapError (always "Syntax Error")
-   )
--}
+            |> Result.orElseLazy
+                (\() ->
+                    Decode.decodeString (definitionsDecoder "sv") str
+                        |> Result.map (Tuple.pair [ "Translations" ])
+                        |> Result.mapError (always "Syntax Error")
+                )
 
 
 fromAst : Node Declaration -> Result String Definition
@@ -1448,71 +1444,128 @@ thereAreNCases n =
 """
 
 
+mockJson =
+    """
+{
+  "apples": "äpple",
+  "apples_plural": "äpplen",
+  "hi": "Hej {{name}}!",
+  "thereAreNCases": "Det finns {{n}} ärende",
+  "thereAreNCases_plural": "Det finns {{n}} ärenden",
+  "welcome": "Välkommen"
+}
+"""
 
-{-
 
-   definitionsDecoder : Language -> Decoder (List Definition)
-   definitionsDecoder language =
-       let
-           findArgs str =
-               Regex.find (Regex.fromString "{.*?}" |> Maybe.withDefault Regex.never) str
-                   |> List.map .match
-                   |> List.unique
-                   |> List.map (String.dropLeft 1 >> String.dropRight 1)
-       in
-       Decode.keyValuePairs Decode.string
-           |> Decode.map
-               (List.sortBy Tuple.first
-                   >> List.groupWhile (\( a, _ ) ( b, _ ) -> String.startsWith (a ++ "_") b)
-                   >> List.map
-                       (\( head, tail ) ->
-                           let
-                               name =
-                                   Tuple.first head
+definitionsDecoder : Language -> Decoder (List Definition)
+definitionsDecoder language =
+    let
+        findArgs str =
+            Regex.find (Regex.fromString "{.*?}" |> Maybe.withDefault Regex.never) str
+                |> List.map .match
+                |> List.unique
+                |> List.map (String.dropLeft 1 >> String.dropRight 1)
+    in
+    Decode.keyValuePairs Decode.string
+        |> Decode.map
+            (List.sortBy Tuple.first
+                >> List.groupWhile (\( a, _ ) ( b, _ ) -> String.startsWith (a ++ "_") b)
+                >> List.map
+                    (\( head, tail ) ->
+                        let
+                            name =
+                                Tuple.first head
 
-                               toDrop =
-                                   String.length name + 1
+                            toDrop =
+                                String.length name + 1
 
-                               choices =
-                                   head
-                                       :: tail
-                                       |> List.map
-                                           (\( choiceKey, string ) ->
-                                               ( if choiceKey == name then
-                                                   "singular"
+                            choices =
+                                head
+                                    :: tail
+                                    |> List.map
+                                        (\( choiceKey, string ) ->
+                                            ( if choiceKey == name then
+                                                "singular"
 
-                                                 else
-                                                   String.dropLeft toDrop choiceKey
-                                               , string |> String.replace "{{" "{" |> String.replace "}}" "}"
-                                               )
-                                           )
-                           in
-                           { name = name
-                           , translation =
-                               case ( (choices |> List.map Tuple.second) |> String.join "" |> findArgs, choices ) of
-                                   ( [], [ single ] ) ->
-                                       Basic (Dict.singleton language (Tuple.second single))
+                                              else
+                                                String.dropLeft toDrop choiceKey
+                                            , string |> String.replace "{{" "{" |> String.replace "}}" "}"
+                                            )
+                                        )
+                        in
+                        { name = name
+                        , translation =
+                            case ( (choices |> List.map Tuple.second) |> String.join "" |> findArgs, choices ) of
+                                ( [], [ single ] ) ->
+                                    Basic (Dict.singleton language (Tuple.second single))
 
-                                   ( [], many ) ->
-                                       Choice (Dict.singleton language (Dict.fromList many))
+                                ( [], many ) ->
+                                    Choice (Dict.singleton language (Dict.fromList many))
 
-                                   ( args, [ single ] ) ->
-                                       Template args (Dict.singleton language { expressions = Nothing, string = Tuple.second single })
+                                ( args, [ single ] ) ->
+                                    Template args (Dict.singleton language { expressions = Nothing, string = Tuple.second single })
 
-                                   ( args, many ) ->
-                                       TemplateChoice args
-                                           (Dict.singleton language
-                                               (many
-                                                   |> List.map (Tuple.mapSecond (\str -> { expressions = Nothing, string = str }))
-                                                   |> Dict.fromList
-                                               )
-                                           )
-                           , complete = False
-                           , invalidTemplate = True
-                           }
-                       )
-               )
--}
+                                ( args, many ) ->
+                                    TemplateChoice args
+                                        (Dict.singleton language
+                                            (many
+                                                |> List.map (Tuple.mapSecond (\str -> { expressions = Nothing, string = str }))
+                                                |> Dict.fromList
+                                            )
+                                        )
+                        , complete = False
+                        , invalidTemplate = True
+                        }
+                    )
+            )
+
+
+mergeDefinitions : String -> List Definition -> String -> List Definition -> Result String (List Definition)
+mergeDefinitions aLang a bLang b =
+    let
+        merger : String -> Definition -> Definition -> Result String (Dict String Definition) -> Result String (Dict String Definition)
+        merger key a_ b_ dict =
+            let
+                combinedTranslation : Result String Translation
+                combinedTranslation =
+                    case ( a_.translation, b_.translation ) of
+                        ( Basic dictA, Basic dictB ) ->
+                            Ok <| Basic <| Dict.union dictA dictB
+
+                        ( Choice dictA, Choice dictB ) ->
+                            Ok <| Choice <| Dict.union dictA dictB
+
+                        ( Template argsA dictA, Template argsB dictB ) ->
+                            if argsA == argsB then
+                                Ok <| Template argsA <| Dict.union dictA dictB
+
+                            else
+                                Err <| "The definition \"" ++ a_.name ++ "\" doesn't have the same variables in all languages"
+
+                        ( TemplateChoice argsA dictA, TemplateChoice argsB dictB ) ->
+                            if argsA == argsB then
+                                Ok <| TemplateChoice argsA <| Dict.union dictA dictB
+
+                            else
+                                Err <| "The definition \"" ++ a_.name ++ "\" doesn't have the same variables in all languages"
+
+                        _ ->
+                            Err <| "The definition \"" ++ a_.name ++ "\" is not of the same type in all languages"
+
+                combinedDef : Result String Definition
+                combinedDef =
+                    Result.map (\t -> { a_ | translation = t }) combinedTranslation
+            in
+            Result.map2 (Dict.insert key) combinedDef dict
+    in
+    Dict.merge
+        (\k v d -> Result.map (Dict.insert k v) d)
+        merger
+        (\k v d -> Result.map (Dict.insert k v) d)
+        (a |> List.map (\d -> ( d.name, d )) |> Dict.fromList)
+        (b |> List.map (\d -> ( d.name, d )) |> Dict.fromList)
+        (Ok Dict.empty)
+        |> Result.map (Dict.toList >> List.map Tuple.second)
 
 
 row : Int -> List (Attribute msg) -> List (Html msg) -> Html msg
