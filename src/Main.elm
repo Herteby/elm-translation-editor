@@ -990,12 +990,6 @@ translationsFromCode str =
                     in
                     Result.map2 Tuple.pair moduleDef definitions
                 )
-            |> Result.orElseLazy
-                (\() ->
-                    Decode.decodeString (definitionsDecoder "sv") str
-                        |> Result.map (Tuple.pair [ "Translations" ])
-                        |> Result.mapError (always "Syntax Error")
-                )
 
 
 fromAst : Node Declaration -> Result String Definition
@@ -1051,7 +1045,7 @@ getBasic { arguments, expression } =
 getTemplateChoice : FunctionImplementation -> Maybe Translation
 getTemplateChoice { arguments, expression } =
     case ( arguments, expression ) of
-        ( _ :: [], Node _ (RecordExpr languages) ) ->
+        ( _ :: _, Node _ (RecordExpr languages) ) ->
             languages
                 |> List.map
                     (\(Node _ ( Node _ language, Node _ expression2 )) ->
@@ -1196,7 +1190,7 @@ getChoice { arguments, expression } =
 getTemplate : FunctionImplementation -> Maybe Translation
 getTemplate { arguments, expression, name } =
     case ( arguments, expression, name ) of
-        ( _ :: [], Node _ (RecordExpr languages), Node _ name2 ) ->
+        ( _ :: _, Node _ (RecordExpr languages), Node _ name2 ) ->
             languages
                 |> List.map
                     (\(Node _ ( Node _ language, Node _ expression2 )) ->
