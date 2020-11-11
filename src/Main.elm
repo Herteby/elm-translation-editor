@@ -3,7 +3,7 @@ port module Main exposing (main)
 import Browser
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Elm.CodeGen as CodeGen
+import Elm.CodeGen as CodeGen exposing (TopLevelExpose, funExpose)
 import Elm.Parser
 import Elm.Pretty as Pretty
 import Elm.Processing
@@ -1227,12 +1227,7 @@ getTemplate { arguments, expression, name } =
 print : ModuleName -> List Definition -> String
 print moduleName definitions =
     CodeGen.file
-        (CodeGen.normalModule moduleName
-            (List.map
-                (.name >> CodeGen.funExpose)
-                definitions
-            )
-        )
+        (CodeGen.normalModule moduleName [ CodeGen.funExpose ".." ])
         []
         (definitions |> List.sortBy .name |> List.map toDeclaration)
         Nothing
